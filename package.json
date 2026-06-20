@@ -1,0 +1,18 @@
+{
+  "name": "@crit-fumble/cfg-server-foundryvtt",
+  "version": "0.1.0",
+  "private": true,
+  "description": "CFG server-side wrapper image for FoundryVTT hosting (additive felddy superset) + its e2e environment",
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "scripts": {
+    "image:build": "DOCKER_BUILDKIT=1 docker build -t cfg-server-foundryvtt:local .",
+    "e2e": "bash e2e/run.sh",
+    "e2e:up": "docker compose -f e2e/compose.yml up -d --wait",
+    "e2e:down": "docker compose -f e2e/compose.yml down -v",
+    "e2e:logs": "docker compose -f e2e/compose.yml logs -f"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.49.0"
+  }
+}

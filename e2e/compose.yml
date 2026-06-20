@@ -1,0 +1,32 @@
+# Standalone e2e Foundry — boots the wrapper image on its own (no CFG proxy/core).
+# Reuses a cached Foundry binary (FOUNDRY_CACHE_DIR, default = the local dev
+# cache) so boot is fast and needs no foundryvtt.com download creds; the license
+# is injected at runtime via e2e/.env (FOUNDRY_LICENSE_KEY) and activated fresh
+# for this container's stable hostname (no host-binding mismatch). .e2e-data/
+# persists across runs (gitignored) so the license isn't re-activated every time.
+services:
+  foundry:
+    image: ${FOUNDRY_IMAGE:-cfg-server-foundryvtt:local}
+    container_name: cfg-server-foundryvtt-e2e
+    hostname: cfg-foundryvtt-e2e
+    ports:
+      - '${E2E_FOUNDRY_PORT:-30001}:30000'
+    env_file:
+      - .env
+    environment:
+      FOUNDRY_ADMIN_KEY: ${FOUNDRY_ADMIN_KEY:-e2eadminkey000000}
+      # Install the Foundry release that the seeded cache actually contains
+      # (run.sh derives this from the cached foundryvtt-<ver>.zip; default tracks
+      # the current dev cache) so felddy installs from cache instead of trying to
+      # download a newer build it expects by default.
+      FOUNDRY_VERSION: ${FOUNDRY_VERSION:-14.361}
+      FOUNDRY_TELEMETRY: 'false'
+      FOUNDRY_MINIFY_STATIC_FILES: 'true'
+      CONTAINER_CACHE: /data/cache
+    volumes:
+      - ./.e2e-data:/data
+      # felddy WRITES to its cache (CACHEDIR.TAG, backoff state) so it can't be
+      # read-only. Use an isolated, gitignored local copy of the Foundry release
+      # cache (seeded by run.sh from FOUNDRY_CACHE_DIR) so the dev cache is never
+      # mutated.
+      - ./.e2e-cache:/data/cache
