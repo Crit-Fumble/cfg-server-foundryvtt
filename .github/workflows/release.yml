@@ -4,7 +4,12 @@ name: release
 #
 # Triggered on `v*` tag pushes (e.g. `git tag v0.1.0 && git push --tags`) and
 # manually via the Actions UI. Pushed to ghcr.io/crit-fumble/cfg-server-foundryvtt
-# with: the git ref (e.g. v0.1.0), `latest` (default-branch tags), sha-<short>.
+# with: the git ref (e.g. v0.1.0), `latest` (default-branch tags), sha-<short>, and
+# `14` — the Foundry MAJOR tag (felddy-style moving tag for the 14.x line). The CFG
+# platform launches campaign containers as `<imageName>:<foundryMajor>` (see
+# foundry-platform getFoundryImageTag), so `cfg-server-foundryvtt:14` is the tag the
+# core-server actually pulls. Bump it alongside the felddy base `FROM` digest when
+# moving to Foundry 15.
 #
 # Mirrors cfg-server-disrecord / cfg-core-server release.yml. The current image is
 # a pure passthrough (FROM felddy@digest) so no BuildKit npmrc secret is needed
@@ -47,6 +52,7 @@ jobs:
           images: ghcr.io/crit-fumble/cfg-server-foundryvtt
           tags: |
             type=ref,event=tag
+            type=raw,value=14
             type=raw,value=latest,enable={{is_default_branch}}
             type=raw,value=${{ inputs.tag }},enable=${{ github.event_name == 'workflow_dispatch' }}
             type=sha,prefix=sha-,format=short
