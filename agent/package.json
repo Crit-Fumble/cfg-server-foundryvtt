@@ -1,0 +1,11 @@
+{
+  "name": "@crit-fumble/cfg-foundry-service-gm",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "One-shot headless service-GM that drains the runtime-provision queue when no human GM is connected",
+  "license": "AGPL-3.0-only",
+  "dependencies": {
+    "@playwright/test": "^1.49.0"
+  }
+}
