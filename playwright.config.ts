@@ -11,6 +11,7 @@ const PORT = process.env.E2E_FOUNDRY_PORT ?? '30001'
 
 export default defineConfig({
   testDir: './e2e/tests',
+  globalSetup: './e2e/global-setup.ts',
   fullyParallel: false,
   workers: 1,
   timeout: 120_000,
