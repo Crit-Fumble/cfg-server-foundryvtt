@@ -1,4 +1,4 @@
-import { request as pwRequest } from '@playwright/test'
+import { request as pwRequest, type Page } from '@playwright/test'
 
 /**
  * Admin-side helpers for the standalone Foundry wrapper — the same `/auth` →
@@ -35,6 +35,27 @@ export async function launchWorld(baseURL: string, worldId: string): Promise<voi
   } finally {
     await ctx.dispose()
   }
+}
+
+/**
+ * Run Foundry's /join handshake for a credential in `page`'s context (the same
+ * handshake core-server's foundry-player-session uses), then load /game and wait
+ * for game.ready. Leaves the page in the live game as that user. page.request
+ * shares the browser context's cookie jar, so the bound session carries into the
+ * navigation.
+ */
+export async function joinWorldAsUser(page: Page, userid: string, password: string): Promise<void> {
+  await page.request.get('/join')
+  const resp = await page.request.post('/join', { form: { action: 'join', userid, password } })
+  const body = await resp.text()
+  if (!body.includes('LoginSuccess')) throw new Error(`/join rejected ${userid}: ${body.slice(0, 160)}`)
+  await page.goto('/game', { waitUntil: 'domcontentloaded', timeout: 60_000 })
+  await page.waitForFunction(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    () => typeof (globalThis as any).game !== 'undefined' && (globalThis as any).game.ready === true && !!(globalThis as any).game.user,
+    undefined,
+    { timeout: 90_000 },
+  )
 }
 
 /**

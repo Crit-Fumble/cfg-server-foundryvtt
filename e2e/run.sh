@@ -42,12 +42,22 @@ if [ ! -d "$HERE/.e2e-data/Data/worlds/test-world" ]; then
     mkdir -p "$HERE/.e2e-data/Data/worlds" "$HERE/.e2e-data/Data/systems" "$HERE/.e2e-data/Data/modules" "$HERE/.e2e-data/Config"
     cp -R "$WORLD_SRC/Data/worlds/test-world" "$HERE/.e2e-data/Data/worlds/"
     cp -R "$WORLD_SRC/Data/systems/dnd5e" "$HERE/.e2e-data/Data/systems/"
-    cp -R "$WORLD_SRC/Data/modules/crit-fumble-core" "$HERE/.e2e-data/Data/modules/"
     [ -f "$WORLD_SRC/Config/license.json" ] && cp "$WORLD_SRC/Config/license.json" "$HERE/.e2e-data/Config/license.json"
   else
     echo "✗ no world source at $WORLD_SRC/Data — set FOUNDRY_WORLD_SRC to a provisioned Foundry data dir" >&2
     exit 1
   fi
+fi
+
+# Re-seed the crit-fumble-core plugin from LOCAL SOURCE every run — the dev
+# install's copy predates the ProvisionDrain (added in plugin v2.2.0); the source
+# is the current code. Only the Foundry-served files (not node_modules/tests/dist).
+PLUGIN_SRC="${CFG_PLUGIN_SRC:-$REPO/../cfg-foundry-plugin}"
+if [ -f "$PLUGIN_SRC/module.json" ]; then
+  echo "→ seeding crit-fumble-core plugin from $PLUGIN_SRC"
+  MOD="$HERE/.e2e-data/Data/modules/crit-fumble-core"
+  rm -rf "$MOD"; mkdir -p "$MOD"
+  cp -R "$PLUGIN_SRC/module.json" "$PLUGIN_SRC/scripts" "$PLUGIN_SRC/styles" "$PLUGIN_SRC/lang" "$MOD/" 2>/dev/null || true
 fi
 
 # Pin the Foundry version to whatever release the cache actually holds, so felddy
