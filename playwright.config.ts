@@ -18,6 +18,9 @@ export default defineConfig({
   reporter: [['line']],
   use: {
     baseURL: `http://localhost:${PORT}`,
+    // Foundry blocks its game UI below 1366x768 — give the headless browser a
+    // desktop viewport so game.ready can fire.
+    viewport: { width: 1600, height: 900 },
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
   },

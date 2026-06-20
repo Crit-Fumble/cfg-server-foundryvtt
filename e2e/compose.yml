@@ -1,14 +1,16 @@
 # Standalone e2e Foundry — boots the wrapper image on its own (no CFG proxy/core).
 # Reuses a cached Foundry binary (FOUNDRY_CACHE_DIR, default = the local dev
-# cache) so boot is fast and needs no foundryvtt.com download creds; the license
-# is injected at runtime via e2e/.env (FOUNDRY_LICENSE_KEY) and activated fresh
-# for this container's stable hostname (no host-binding mismatch). .e2e-data/
-# persists across runs (gitignored) so the license isn't re-activated every time.
+# cache) so boot is fast and needs no foundryvtt.com download creds. The license
+# is the SIGNED, host-bound one from the dev install (run.sh seeds it) and the
+# container hostname matches that license's host — a fresh activation of a new
+# host hits Foundry's activation limit and leaves the GAME stuck on the license
+# page, so we reuse the dev activation instead. .e2e-data/ persists across runs.
 services:
   foundry:
     image: ${FOUNDRY_IMAGE:-cfg-server-foundryvtt:local}
     container_name: cfg-server-foundryvtt-e2e
-    hostname: cfg-foundryvtt-e2e
+    # Must equal the seeded license's `host` field (Config/license.json).
+    hostname: ${FOUNDRY_HOSTNAME:-cfg-inst-cmpj7j1on000}
     ports:
       - '${E2E_FOUNDRY_PORT:-30001}:30000'
     env_file:

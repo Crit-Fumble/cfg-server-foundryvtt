@@ -28,20 +28,24 @@ if [ ! -d "$HERE/.e2e-cache" ] || [ -z "$(ls -A "$HERE/.e2e-cache" 2>/dev/null)"
   fi
 fi
 
-# Seed the test world + its system (dnd5e) + the CFG plugin once, so the
-# standalone Foundry can launch a REAL world for the provisioning suite. Source =
-# a provisioned Foundry install's Data dir (the dev e2e storage by default);
-# override via FOUNDRY_WORLD_SRC. globalSetup launches it via the admin API.
-WORLD_SRC="${FOUNDRY_WORLD_SRC:-$REPO/../../.dev-state/e2e_cfg_user_storage/users/d637ce7b-fdad-454c-bfcd-041a5a9c3dec/installations/cmpj7j1on0000lhlpas58x149/data/Data}"
+# Seed the test world + its system (dnd5e) + the CFG plugin + the SIGNED license
+# once, so the standalone Foundry can launch a REAL world for the provisioning
+# suite. Source = a provisioned Foundry install's data dir (the dev install by
+# default); override via FOUNDRY_WORLD_SRC. globalSetup launches the world via
+# the admin API. The license is the dev install's signed, host-bound one; the
+# container hostname (compose) matches its host so Foundry accepts it without a
+# fresh activation (which would hit Foundry's per-license activation limit).
+WORLD_SRC="${FOUNDRY_WORLD_SRC:-$REPO/../../.dev-state/cfg_user_storage/users/d637ce7b-fdad-454c-bfcd-041a5a9c3dec/installations/cmpj7j1on0000lhlpas58x149/data}"
 if [ ! -d "$HERE/.e2e-data/Data/worlds/test-world" ]; then
-  if [ -d "$WORLD_SRC/worlds/test-world" ]; then
-    echo "→ seeding test-world + dnd5e + crit-fumble-core plugin from $WORLD_SRC (one-time)"
-    mkdir -p "$HERE/.e2e-data/Data/worlds" "$HERE/.e2e-data/Data/systems" "$HERE/.e2e-data/Data/modules"
-    cp -R "$WORLD_SRC/worlds/test-world" "$HERE/.e2e-data/Data/worlds/"
-    cp -R "$WORLD_SRC/systems/dnd5e" "$HERE/.e2e-data/Data/systems/" 2>/dev/null || true
-    cp -R "$WORLD_SRC/modules/crit-fumble-core" "$HERE/.e2e-data/Data/modules/" 2>/dev/null || true
+  if [ -d "$WORLD_SRC/Data/worlds/test-world" ]; then
+    echo "→ seeding test-world + dnd5e + crit-fumble-core plugin + signed license from $WORLD_SRC (one-time)"
+    mkdir -p "$HERE/.e2e-data/Data/worlds" "$HERE/.e2e-data/Data/systems" "$HERE/.e2e-data/Data/modules" "$HERE/.e2e-data/Config"
+    cp -R "$WORLD_SRC/Data/worlds/test-world" "$HERE/.e2e-data/Data/worlds/"
+    cp -R "$WORLD_SRC/Data/systems/dnd5e" "$HERE/.e2e-data/Data/systems/"
+    cp -R "$WORLD_SRC/Data/modules/crit-fumble-core" "$HERE/.e2e-data/Data/modules/"
+    [ -f "$WORLD_SRC/Config/license.json" ] && cp "$WORLD_SRC/Config/license.json" "$HERE/.e2e-data/Config/license.json"
   else
-    echo "✗ no world source at $WORLD_SRC — set FOUNDRY_WORLD_SRC to a provisioned Foundry Data dir" >&2
+    echo "✗ no world source at $WORLD_SRC/Data — set FOUNDRY_WORLD_SRC to a provisioned Foundry data dir" >&2
     exit 1
   fi
 fi

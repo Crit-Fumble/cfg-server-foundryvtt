@@ -13,6 +13,7 @@
     "e2e:logs": "docker compose -f e2e/compose.yml logs -f"
   },
   "devDependencies": {
-    "@playwright/test": "^1.49.0"
+    "@playwright/test": "^1.49.0",
+    "classic-level": "^3.0.0"
   }
 }
