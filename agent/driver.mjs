@@ -35,7 +35,11 @@ if (!FOUNDRY_URL || !USERID || !PASSWORD || !CORE_API_URL || !INSTALLATION_ID) {
   process.exit(2)
 }
 
-const browser = await chromium.launch({ headless: true, args: ['--no-sandbox', '--disable-dev-shm-usage'] })
+// CHROMIUM_PATH lets a slim image point at a SYSTEM chromium (e.g. Alpine's) and
+// skip Playwright's ~1GB bundled download; unset = Playwright's bundled chromium.
+const launchOpts = { headless: true, args: ['--no-sandbox', '--disable-dev-shm-usage'] }
+if (process.env.CHROMIUM_PATH) launchOpts.executablePath = process.env.CHROMIUM_PATH
+const browser = await chromium.launch(launchOpts)
 let code = 1
 try {
   const ctx = await browser.newContext({ viewport: { width: 1600, height: 900 } })
