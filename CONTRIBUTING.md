@@ -42,7 +42,8 @@ npm run e2e:down                # tear down (-v)
 
 Use [Conventional Commits](https://www.conventionalcommits.org/)
 (`feat`, `fix`, `chore`, `docs`, `refactor`, `test`, `ci`, `build`). Fork, branch
-from `main`, keep changes additive/reversible, run the e2e suite for anything that
+from `next` (the release-candidate branch — `main` is released truth and is
+only ever fast-forwarded to), keep changes additive/reversible, run the e2e suite for anything that
 touches the image or its entrypoint, and explain the *why* in the PR description.
 
 ## License
