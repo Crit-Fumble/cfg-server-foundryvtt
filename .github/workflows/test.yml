@@ -42,6 +42,26 @@ jobs:
       # file that tests don't import still fails here instead of at release time.
       - run: npm run build:zip
 
+  # The service-GM driver image ships its own Playwright, and agent/Dockerfile
+  # requires it to move in lockstep with the root lock. `npm ci` inside the image
+  # build only compares agent/package.json to agent/package-lock.json, so the
+  # third edge of that triangle was enforced by a comment alone — the same shape
+  # as the base digest that "read as pinned" while Playwright floated below it.
+  #
+  # No npm install, no registry, no Docker: the check reads three committed JSON
+  # files. Deliberately NOT folded into `unit`, whose working-directory is
+  # `module/` and whose npm auth this does not need.
+  agent-pin:
+    name: Agent Playwright pin
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+      - run: npm run test:agent
+
   # ── THE ONLY REQUIRED CONTEXT ─────────────────────────────────────────────
   # Branch protection requires `ci-gate` and nothing else, so renaming or
   # splitting a job needs no branch-protection change.
@@ -58,7 +78,7 @@ jobs:
   ci-gate:
     name: CI Gate
     if: always()
-    needs: [unit]
+    needs: [unit, agent-pin]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

@@ -49,16 +49,33 @@ if [ ! -d "$HERE/.e2e-data/Data/worlds/test-world" ]; then
   fi
 fi
 
-# Re-seed the crit-fumble-core plugin from LOCAL SOURCE every run — the dev
+# Re-seed the crit-fumble-core module from LOCAL SOURCE every run — the dev
 # install's copy predates the ProvisionDrain (added in plugin v2.2.0); the source
 # is the current code. Only the Foundry-served files (not node_modules/tests/dist).
-PLUGIN_SRC="${CFG_PLUGIN_SRC:-$REPO/../cfg-foundry-plugin}"
-if [ -f "$PLUGIN_SRC/module.json" ]; then
-  echo "→ seeding crit-fumble-core plugin from $PLUGIN_SRC"
-  MOD="$HERE/.e2e-data/Data/modules/crit-fumble-core"
-  rm -rf "$MOD"; mkdir -p "$MOD"
-  cp -R "$PLUGIN_SRC/module.json" "$PLUGIN_SRC/scripts" "$PLUGIN_SRC/styles" "$PLUGIN_SRC/lang" "$MOD/" 2>/dev/null || true
+#
+# ⛔ THE SOURCE IS THIS REPO'S OWN `module/`, AND THAT IS THE WHOLE POINT.
+# It defaulted to `$REPO/../cfg-foundry-plugin` until 2026-08-07 — a sibling
+# checkout that still exists on every dev machine, so the default resolved
+# silently and this suite proved the PRE-SPLIT plugin (2.48.3, 3D included)
+# while the image and the release channel shipped `module/` (CFG Server Manager
+# 3.0.0). Every rung below — world-active, service-gm-join, provision-drain,
+# session-epoch-restart, driver — was green against a module this repo does not
+# publish. Nothing failed, which is exactly why it survived the merge.
+PLUGIN_SRC="${CFG_PLUGIN_SRC:-$REPO/module}"
+if [ ! -f "$PLUGIN_SRC/module.json" ]; then
+  echo "✗ no module source at $PLUGIN_SRC (expected module.json) — set CFG_PLUGIN_SRC" >&2
+  exit 1
 fi
+echo "→ seeding crit-fumble-core module from $PLUGIN_SRC"
+MOD="$HERE/.e2e-data/Data/modules/crit-fumble-core"
+rm -rf "$MOD"; mkdir -p "$MOD"
+# No `|| true` here: `rm -rf` already ran, so a swallowed copy failure leaves a
+# PARTIAL module and the suite reports on something that was never installed.
+cp -R "$PLUGIN_SRC/module.json" "$PLUGIN_SRC/scripts" "$PLUGIN_SRC/styles" "$PLUGIN_SRC/lang" "$MOD/"
+# Say which module actually landed. The bug above was invisible for want of one
+# line of output — both sources carry id `crit-fumble-core`, so only the VERSION
+# distinguishes the shipped module from the retiring plugin.
+echo "  installed $(node -p "require('$MOD/module.json').title + ' ' + require('$MOD/module.json').version")"
 
 # Pin the Foundry version to whatever release the cache actually holds, so felddy
 # installs from cache instead of trying to fetch the build it defaults to.
