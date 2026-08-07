@@ -6,11 +6,37 @@ CFG's **server-side wrapper image** for FoundryVTT hosting — the server half o
 it ran the prebuilt `felddy/foundryvtt` image directly from `cfg-core-server`.
 
 Because **FoundryVTT _is_ a webserver** that serves its own client UI, this single
-repo owns *both halves*: the server runtime **and** what's served to the client
-(it can bake + serve the `crit-fumble-core` plugin itself). Unlike TaleSpire — whose
-client is a separate native app needing a separate symbiote — Foundry needs no
-separate client companion. (The standalone `cfg-foundry-plugin` repo remains, for
-**self-hosted** Foundry users who install the module themselves.)
+repo owns *both halves*: the server runtime **and** what's served to the client.
+Unlike TaleSpire — whose client is a separate native app needing a separate
+symbiote — Foundry needs no separate client companion.
+
+## The CFG Server Manager module (`module/`)
+
+The platform's Foundry module lives here too — **CFG Server Manager**, module id
+`crit-fumble-core` (the id predates the title and MUST stay: Foundry worlds store
+their enable flag in `core.moduleConfiguration` keyed by id, so changing it
+orphans every world's setting). It carries campaign linking, runtime player
+provisioning, the world↔platform document sync couriers, and session reporting —
+for CFG-hosted **and** self-hosted worlds alike. It was extracted from
+`cfg-foundry-plugin` at module 2.48.3; the draft **3D overlay stayed behind**
+there and becomes its own optional module.
+
+**Delivery channel:** each `v*` release of this repo attaches `module.json` +
+`module.zip` as GitHub release assets, and the manifest's own URLs point at
+`releases/latest/download/…` — so a release here *is* a module publish (a
+curated default, replacing "every hosted launch installs whatever is on `main`").
+
+> ⚠️ Until `foundryPluginManifestUrl` is flipped in cfg-core-server config,
+> hosted launches still install from `cfg-foundry-plugin` `main` — that repo's
+> `main` remains the LIVE channel and must not be restructured first.
+
+```bash
+cd module
+env "npm_config_//npm.pkg.github.com/:_authToken=$(gh auth token)" npm ci
+npm test              # jest unit suite
+npm run build:zip     # dist/module.json + dist/module.zip (+ versioned zip)
+npm run test:foundry:up && npm run test:foundry   # integration (licensed Foundry)
+```
 
 ## Design: a strict additive felddy superset
 
@@ -40,7 +66,9 @@ change with felddy as the documented rollback.
       layout, `admin.txt`, license host-binding, route-prefixed surface, SIGTERM).
 - [ ] Swap `cfg-core-server` `foundryImage` in dev → prod (still pure passthrough).
 - [ ] Co-located service-GM agent, gated by `SERVICE_GM_ENABLED` (default off).
-- [ ] Bake the `crit-fumble-core` plugin (collapse `syncCfgPlugin`).
+- [x] **Module source in-repo** (`module/`) + release-asset delivery channel.
+- [ ] Flip `foundryPluginManifestUrl` to this repo's release assets (owner/config).
+- [ ] Bake the `crit-fumble-core` plugin into the image (collapse `syncCfgPlugin`, #1).
 
 Tracked under the [FoundryVTT Hosting epic](https://github.com/Crit-Fumble/cfg-core-server/issues/71).
 

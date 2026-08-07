@@ -8,7 +8,15 @@
 # ~650MB). Uses Playwright's OWN bundled Chromium so it stays the exact build the
 # e2e validates against Foundry. The hand-picked apt libs are Chromium's runtime
 # deps — lighter than `playwright install --with-deps`.
-FROM node:22-bookworm-slim
+#
+# Base pinned by DIGEST, same rule as the wrapper's felddy base. A `v*` tag
+# republishes :latest, and kind-image.ts pulls :latest with imagePull: always on
+# EVERY user container launch — so a floating `22-bookworm-slim` would let a tag
+# that changes no source still ship a different image to a live game night. This
+# is the OCI index digest, so buildx still resolves the linux/amd64 child.
+# Bump deliberately:
+#   docker buildx imagetools inspect node:22-bookworm-slim   # take the top Digest
+FROM node:22-bookworm-slim@sha256:d649c27dae7ba0137b3cef5dd75baa422c08dc3d9e3fc0c23dfb172dc3cc6436
 
 ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 RUN apt-get update && apt-get install -y --no-install-recommends \
