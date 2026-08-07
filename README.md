@@ -83,4 +83,40 @@ docker build -t cfg-server-foundryvtt:local .
 docker run --rm -p 30000:30000 -v "$PWD/data:/data" cfg-server-foundryvtt:local
 ```
 
+## Verifying the service-GM driver image
+
+`ghcr.io/crit-fumble/cfg-foundry-service-gm` is the one-shot headless Chromium
+container `foundry-service-gm-launcher.ts` spawns, and it pulls `:latest` with
+`imagePull: always` on every launch — so what that tag holds reaches users
+without a deploy.
+
+Two guards, and it is worth knowing what each does **not** cover:
+
+| guard | covers | blind to |
+|---|---|---|
+| `npm ci` in `agent/Dockerfile` | `agent/package.json` ↔ `agent/package-lock.json` | the root lock |
+| `npm run test:agent` (CI) | all three Playwright pins agree, and the agent pin is exact | whether the built image actually runs |
+| `e2e/tests/driver.spec.ts` | the driver SOURCE drains a real world | runs on the HOST — not the image |
+
+⚠️ **No test boots the published image.** That gap is how v0.3.0 shipped Chromium
+151 in place of 149: `agent/Dockerfile` pinned its base by digest while
+`"^1.49.0"` re-resolved a layer below, and every check stayed green. v0.3.1 fixed
+the pin; the missing rung is still missing.
+
+The probe below is the license-free stand-in — it needs no Foundry, no `.env` and
+no `.dev-state`, and runs the image under the launcher's exact hardening:
+
+```bash
+docker run --rm --platform linux/amd64 --read-only \
+  --tmpfs /tmp:rw,nosuid,size=512m --tmpfs /home/node/.cache:rw,nosuid,size=128m \
+  --cap-drop ALL -w /app --entrypoint node \
+  ghcr.io/crit-fumble/cfg-foundry-service-gm:latest \
+  -e 'import("@playwright/test").then(async m=>{const b=await m.chromium.launch({headless:true,args:["--no-sandbox","--disable-dev-shm-usage"]});console.log(b.version());await b.close()})'
+```
+
+⚠️ **Read what it proves narrowly.** v0.2.0, v0.3.0 *and* v0.3.1 all pass it — so
+it catches an image that cannot start a browser at all, not a browser version
+Foundry's login and drain UI has never been driven with. Verify a tag by
+extracting the published layer, never by reading the Dockerfile.
+
 License: AGPL-3.0-only.

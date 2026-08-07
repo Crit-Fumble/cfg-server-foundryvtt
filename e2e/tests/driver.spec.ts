@@ -6,11 +6,26 @@ import { SERVICE_GM } from '../helpers/service-gm'
 import { startStubCoreApi, type StubCoreApi } from '../helpers/stub-core-api'
 
 /**
- * In-repo rung 4: the PRODUCTION driver (agent/driver.mjs) — the standalone
- * one-shot the platform will spawn as a sibling container — joins the live world
- * as the service-GM and drains a queued player. Same drain the rung-3 spec
- * drives inline, but exercised through the real driver entrypoint (its own
- * Chromium, env-configured), proving the deployable artifact works.
+ * In-repo rung 4: the PRODUCTION driver SOURCE (agent/driver.mjs) — the
+ * standalone one-shot the platform spawns as a sibling container — joins the
+ * live world as the service-GM and drains a queued player. Same drain the rung-3
+ * spec drives inline, but exercised through the real driver entrypoint.
+ *
+ * ⛔ THIS DOES NOT TEST THE DEPLOYABLE IMAGE, and used to claim it did.
+ * `execFile('node', [driver])` runs on the HOST: the host's node, the ROOT
+ * package-lock's Playwright, and that Playwright's Chromium. The shipped
+ * artifact is `ghcr.io/crit-fumble/cfg-foundry-service-gm` — a different node
+ * base, its own `agent/package-lock.json`, its own `playwright install chromium`,
+ * running non-root and read-only with `--cap-drop ALL`.
+ *
+ * That gap is why v0.3.0 published a Chromium nobody had run against Foundry
+ * (149 → 151) while this spec stayed green. Two things now stand in for the
+ * missing in-image rung, and neither is a substitute for building one:
+ *   - `agent/check-playwright-pin.mjs` (CI) forces the host Playwright tested
+ *     here and the one baked into the image to be the SAME version, which is
+ *     what makes this run transferable evidence at all.
+ *   - the license-free launch probe in the repo README, which boots the real
+ *     image under the launcher's exact hardening.
  */
 const execFileP = promisify(execFile)
 const PORT = process.env.E2E_FOUNDRY_PORT ?? '30001'

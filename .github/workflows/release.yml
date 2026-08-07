@@ -121,10 +121,16 @@ jobs:
     # accepted: hosted launches always install latest, and per-install pinning
     # is the Foundry APP version's job, never the module's.
     #
-    # ⚠️ Hosted launches keep installing from cfg-foundry-plugin `main` until
-    # `foundryPluginManifestUrl` is flipped in cfg-core-server config (all
-    # config locations + the server.ts code fallback) — an owner/config change,
-    # deliberately not part of this repo.
+    # The flip to this channel landed 2026-08-07: `foundryPluginManifestUrl` now
+    # points here in all three cfg-core-server `config/*.json`, in the server.ts
+    # code fallback (cfg-core-server #290) and in dev-tools'
+    # `orchestration/config-overrides/production.json`, which is the file the
+    # RUNNING core-server actually reads. Hosted worlds install these assets from
+    # the next production deploy onward.
+    #
+    # ⚠️ So a release here IS a change to what every hosted world runs. There is
+    # no separate "publish the module" step to forget and no staging tier between
+    # this job and a live game.
     #
     # Tag pushes only (a manual dispatch has no release to attach to). The
     # release object may not exist yet when the tag is pushed from the CLI, so

@@ -6,7 +6,8 @@
  * container, not inside it — prod's docker-socket-proxy denies EXEC) when a
  * running world has invited players queued but NO human GM connected. It joins
  * the live world as the platform's role-4 service-GM and runs the in-world
- * cfg-foundry-plugin ProvisionDrain — the EXACT class a human GM's browser runs
+ * CFG Server Manager ProvisionDrain (`module/scripts/services/provision-drain.js`,
+ * absorbed here from cfg-foundry-plugin) — the EXACT class a human GM's browser runs
  * — until the queue is idle, then exits.
  *
  * It NEVER POSTs /quit (that would kill the world for everyone); it just closes

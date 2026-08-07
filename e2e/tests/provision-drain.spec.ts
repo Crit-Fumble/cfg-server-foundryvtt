@@ -5,7 +5,7 @@ import { startStubCoreApi, type StubCoreApi } from '../helpers/stub-core-api'
 
 /**
  * In-repo rung 3: with ONLY the service-GM in the live world (no human GM), the
- * real cfg-foundry-plugin ProvisionDrain — the exact class a human GM's browser
+ * real ProvisionDrain from this repo's `module/` — the exact class a human GM's browser
  * runs — creates + confirms a queued player's Foundry User. Proven standalone: a
  * stub stands in for core-server's runtime-provision queue endpoints.
  */
