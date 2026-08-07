@@ -5,9 +5,8 @@
 #
 # Chromium-ONLY on a slim Node base — NOT the full mcr.microsoft.com/playwright
 # image, which also ships Firefox + WebKit (the real on-disk delta is ~848MB ->
-# ~650MB). Uses Playwright's OWN bundled Chromium so it stays the exact build the
-# e2e validates against Foundry. The hand-picked apt libs are Chromium's runtime
-# deps — lighter than `playwright install --with-deps`.
+# ~650MB). Uses Playwright's OWN bundled Chromium. The hand-picked apt libs are
+# Chromium's runtime deps — lighter than `playwright install --with-deps`.
 #
 # Base pinned by DIGEST, same rule as the wrapper's felddy base. A `v*` tag
 # republishes :latest, and kind-image.ts pulls :latest with imagePull: always on
@@ -25,9 +24,21 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       libpango-1.0-0 libcairo2 libasound2 libatspi2.0-0 fonts-liberation \
  && rm -rf /var/lib/apt/lists/*
 
+# ⚠️ The base digest above pins ONLY the base. Playwright is the other half, and
+# it decides which Chromium `playwright install` downloads — so an unpinned range
+# floats the browser this driver steers Foundry with, one layer BELOW a file that
+# reads as pinned. That is exactly what happened at v0.3.0: `^1.49.0` re-resolved
+# 1.61.0 -> 1.62.1 and swapped Chromium 149 -> 151, a jump no test had seen, onto
+# a `:latest` the launcher pulls with imagePull: always.
+#
+# So: an EXACT version + a committed package-lock.json + `npm ci` (which fails,
+# rather than silently resolving, if the two disagree). The pin tracks the root
+# package-lock.json, because e2e/tests/driver.spec.ts runs driver.mjs from the
+# HOST — so the root lock is the Playwright that has actually driven Foundry.
+# ⚠️ Bump BOTH together, and re-run `npm run e2e`; they are one decision.
 WORKDIR /app
-COPY package.json ./
-RUN npm install --omit=dev --no-audit --no-fund \
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev --no-audit --no-fund \
  && npx playwright install chromium \
  && rm -rf /root/.npm
 
