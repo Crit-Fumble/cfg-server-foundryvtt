@@ -2,14 +2,15 @@
 
 This is CFG's **server-side wrapper image** for FoundryVTT hosting — a strict
 *additive* superset of the upstream `felddy/foundryvtt` image (see the README's
-"Design" section). Most of the repo is a Dockerfile plus a Playwright e2e
-environment; there is no long-running `npm run dev`.
+"Design" section) — plus the **CFG Server Manager** Foundry module under
+`module/` (see the README's module section). There is no long-running
+`npm run dev`.
 
 ## What you need
 
 - **Docker** (with BuildKit) — the primary artifact is a container image.
-- **Node.js >= 24** (see `.nvmrc`) — only for the e2e harness
-  (`@playwright/test`, `classic-level`).
+- **Node.js >= 24** (see `.nvmrc`) — for the e2e harness and the module's
+  jest suite.
 
 ## Build & run the image
 
@@ -37,6 +38,24 @@ npm run e2e:down                # tear down (-v)
 
 `e2e/` bakes a real dnd5e system fixture and serves Foundry on `:30000`. See
 `e2e/run.sh` for the flow.
+
+## The Server Manager module (`module/`)
+
+The module has its own npm install (`@crit-fumble/shared` comes from GitHub
+Packages — see `module/.npmrc` for the local auth one-liner) and its own suites:
+
+```bash
+cd module
+env "npm_config_//npm.pkg.github.com/:_authToken=$(gh auth token)" npm ci
+npm test                 # jest unit suite — this is what CI Gate runs
+npm run build:zip        # pack smoke: dist/module.json + dist/module.zip
+npm run test:foundry:up  # integration stack (needs a licensed Foundry account —
+npm run test:foundry     #   see module/tests/.env.test.example)
+```
+
+Husky pre-commit/pre-push at the repo root run the module's unit tests. The
+module id `crit-fumble-core` must never change (worlds key their enable flag on
+it), and `module.json` is the module's **only** version source.
 
 ## Commit messages & PRs
 

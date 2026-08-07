@@ -110,3 +110,51 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  module-assets:
+    # CFG Server Manager Foundry module (module/) — build the module zip and
+    # attach it + its manifest to the GitHub release for this tag. These assets
+    # ARE the module's delivery channel: module.json's own manifest/download
+    # URLs point at releases/latest/download/, which resolves to whatever the
+    # newest release carries, so uploading here is publishing. Installing an
+    # older release's manifest therefore still downloads the newest zip —
+    # accepted: hosted launches always install latest, and per-install pinning
+    # is the Foundry APP version's job, never the module's.
+    #
+    # ⚠️ Hosted launches keep installing from cfg-foundry-plugin `main` until
+    # `foundryPluginManifestUrl` is flipped in cfg-core-server config (all
+    # config locations + the server.ts code fallback) — an owner/config change,
+    # deliberately not part of this repo.
+    #
+    # Tag pushes only (a manual dispatch has no release to attach to). The
+    # release object may not exist yet when the tag is pushed from the CLI, so
+    # create it if missing rather than failing.
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up Node
+        uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+
+      - name: Build module zip + manifest
+        # build-zip.js uses Node built-ins only — no npm ci needed.
+        run: node module/scripts/build-zip.js
+
+      - name: Attach to release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          TAG="$GITHUB_REF_NAME"
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 \
+            || gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --verify-tag --generate-notes
+          gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber \
+            module/dist/module.json \
+            module/dist/module.zip \
+            module/dist/crit-fumble-core-*.zip

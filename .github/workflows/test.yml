@@ -1,0 +1,78 @@
+name: test
+
+# CI for the CFG Server Manager Foundry module (module/). The container wrapper
+# has no unit tests — its verification is the e2e harness (e2e/), which needs a
+# licensed Foundry and runs locally, not here.
+
+on:
+  push:
+    branches: [main, next]
+  pull_request:
+    branches: [main, next]
+
+permissions:
+  contents: read
+  # @crit-fumble/shared installs from GitHub Packages; GITHUB_TOKEN cannot read
+  # it without this, so npm ci 401s no matter what auth the step passes.
+  packages: read
+
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: module
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: module/package-lock.json
+          # Writes the //npm.pkg.github.com/:_authToken line into the runner's
+          # .npmrc. Without it, the repo .npmrc only names the registry and
+          # nothing binds a token to it — NODE_AUTH_TOKEN alone is ignored.
+          registry-url: 'https://npm.pkg.github.com'
+          scope: '@crit-fumble'
+      - run: npm ci
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - run: npm test
+      # Pack smoke — build-zip walks the real tree, so a deleted/renamed runtime
+      # file that tests don't import still fails here instead of at release time.
+      - run: npm run build:zip
+
+  # ── THE ONLY REQUIRED CONTEXT ─────────────────────────────────────────────
+  # Branch protection requires `ci-gate` and nothing else, so renaming or
+  # splitting a job needs no branch-protection change.
+  # `if: always()` — without it the gate is SKIPPED on a failed dependency,
+  # which reports as neither pass nor fail and hangs the PR.
+  # ⚠️ FAIL-CLOSED, AND IT MUST STAY THAT WAY. `success` and `skipped` pass;
+  # EVERY other result fails, including ones GitHub has not documented.
+  # This was a denylist (`failure` or `cancelled`) in cfg-foundry-plugin until
+  # 2026-08-06, when an Actions partial outage produced `"result": "abandoned"`
+  # — which matched neither, so the gate reported SUCCESS over a job that never
+  # ran. CI Gate is the ONLY required check, so that made branch protection
+  # satisfiable with zero tests. Never enumerate the bad values; enumerate the
+  # good ones.
+  ci-gate:
+    name: CI Gate
+    if: always()
+    needs: [unit]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Fail if any required job failed
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          set -uo pipefail
+          echo "$RESULTS"
+          BAD=$(printf '%s' "$RESULTS" | jq -r 'to_entries[] | select(.value.result != "success" and .value.result != "skipped") | "\(.key)=\(.value.result)"')
+          if [ -n "$BAD" ]; then
+            echo "::error::CI Gate FAILED — these jobs did not pass:"
+            # shellcheck disable=SC2086  # deliberate word-split — one job per line
+            printf '  %s\n' $BAD
+            exit 1
+          fi
+          echo "✓ CI Gate: nothing failed"

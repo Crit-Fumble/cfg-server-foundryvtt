@@ -1,0 +1,77 @@
+##
+## Foundry VTT — Integration Test Stack
+##
+## Runs a FoundryVTT v14 container for plugin integration tests.
+## The plugin source is bind-mounted read-only so tests always run against
+## the current working tree without a separate build step.
+##
+## Usage (via npm scripts, which also stage the world + sign the EULA):
+##   npm run test:foundry:up      # stage world copy, start container, launch world
+##   npm run test:foundry         # run the Playwright integration specs
+##   npm run test:foundry:down    # stop container, drop the runtime world copy
+##
+## The test world template (fixtures/worlds/cfg-test-world/) is copied to
+## fixtures/.worlds-runtime/ before the container starts, and that copy is what
+## gets bind-mounted — so Foundry's runtime writes (lastPlayed, data dirs) never
+## dirty the tracked template. Module settings (API URL, campaign ID, API key)
+## are injected at runtime by the Playwright globalSetup.
+##
+
+services:
+  foundry:
+    image: felddy/foundryvtt:14
+    platform: linux/amd64
+    init: true
+    # Run as root in the TEST container so Foundry can traverse the root-owned
+    # mount-point parents Docker creates for our bind mounts (plugin under
+    # Data/modules, etc.) — avoids EACCES on felddy's README scan. Production
+    # uses uid 1000 + host-side perm prep + --group-add; that's overkill here.
+    user: '0:0'
+    environment:
+      # NB: FOUNDRY_LICENSE_KEY is intentionally NOT passed. Foundry v14 requires
+      # a signed EULA, and felddy only obtains the signature by fetching the
+      # *signed* license via the authenticated account (USERNAME/PASSWORD). A raw
+      # key alone leaves Foundry stuck on /license ("requires signature").
+      FOUNDRY_USERNAME: ${FOUNDRY_USERNAME}
+      FOUNDRY_PASSWORD: ${FOUNDRY_PASSWORD}
+      FOUNDRY_ADMIN_KEY: ${FOUNDRY_ADMIN_KEY:-cfgtestadmin}
+      FOUNDRY_WORLD: cfg-test-world
+      # Pin to the platform's Foundry version. With the cached zip mounted below,
+      # felddy uses it and skips the download/auth — matching how the platform
+      # launches campaign containers (read-only cache, version-pinned).
+      FOUNDRY_VERSION: ${FOUNDRY_VERSION:-14.361}
+      # felddy v14 uses /data as the Foundry dataPath (v13 used /foundrydata).
+      CONTAINER_CACHE: /data/cache
+    volumes:
+      # The plugin repo root (one level up from tests/) is the module — its
+      # module.json must sit at the mount root for Foundry to detect it. NB: this
+      # is `../`, not `../../` (which is the workspaces/ parent and has no manifest).
+      - ../:/data/Data/modules/crit-fumble-core:ro
+      # The runtime copy (staged from fixtures/worlds by `test:foundry:up`), not
+      # the tracked template — Foundry mutates this dir and we keep git clean.
+      - ./fixtures/.worlds-runtime:/data/Data/worlds
+      # dnd5e system comes from the platform's local catalog (read-only). The
+      # Foundry cache (with the pre-downloaded foundryvtt-14.361.zip) is mounted
+      # read-write: felddy v14 writes housekeeping (CACHEDIR.TAG, backoff_state)
+      # into it even when reusing the cached zip, so a read-only mount makes it
+      # bail. Paths are set in tests/.env.test (machine-local, gitignored).
+      # Mount the WHOLE systems dir (not a subdir) so Docker doesn't create a
+      # root-owned /data/Data/systems parent that felddy (uid 1000) then can't
+      # manage (EACCES on its README scan). Read-write so felddy can drop its
+      # housekeeping README. Contains dnd5e (+ cyphersystem) from the catalog.
+      - ${FOUNDRY_SYSTEMS_DIR}:/data/Data/systems
+      - ${FOUNDRY_CACHE_DIR}:/data/cache
+    ports:
+      - '30000:30000'
+    networks:
+      - cfg-foundry-test-network
+    healthcheck:
+      test: ['CMD', 'curl', '-f', 'http://localhost:30000/api/status']
+      interval: 15s
+      timeout: 5s
+      retries: 12
+      start_period: 90s
+
+networks:
+  cfg-foundry-test-network:
+    name: cfg-foundry-test-network

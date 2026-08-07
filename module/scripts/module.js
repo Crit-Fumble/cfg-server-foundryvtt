@@ -1,0 +1,823 @@
+/**
+ * CFG Server Manager (module id stays `crit-fumble-core` — see module.json)
+ * Foundry VTT plugin for Crit-Fumble Gaming platform integration.
+ *
+ * Extracted from cfg-foundry-plugin at 2.48.3; the 3D overlay (overlay-3d.js +
+ * overlay3d/* + three.bundle.js and its module.js hooks) stayed behind there to
+ * become its own optional module — nothing in this tree may import it.
+ *
+ * What this module ACTUALLY does today (verified fp#47 — the previous list was
+ * aspirational and named several things that have never been wired):
+ *   - Campaign linking — Module Settings → Linked Campaigns (GM-only)
+ *   - Runtime player provisioning — creates the Foundry Users the platform
+ *     reserved, so the proxy can SSO invited players (ProvisionDrain, GM-only)
+ *   - Whole-world actor mirror → Core, for offline sheet viewing (GM-only)
+ *   - Character sheet write-back, Core → live actor (UPDATE-only; it cannot
+ *     create an actor — fp#46)
+ *   - Party journal sync, Core → live world (JournalPullSync, GM-only, #184)
+ *   - Connection banner + first-run pair prompt
+ *
+ * NOT present, though older docs claimed them: party roster, session tracker,
+ * campaign filter, chat unification, quest sync, the iframe VTT bridge. Those
+ * files were DELETED in fp#47 — 28 modules / ~5k lines that had no importer since
+ * the monorepo extraction and would have thrown if wired (they read settings that
+ * were never registered). `git log` has them if any is ever wanted back.
+ *
+ * This file is the ONLY esmodule entry (module.json), so "reachable from here" is
+ * the whole of the live plugin. If you add a file nothing imports, it is dead —
+ * it will still ship in the zip and still read like production code.
+ */
+
+import { CoreAPIClient } from './clients/api-client.js'
+import { CfgCampaignLinksDialog } from './views/cfg-campaign-links.js'
+import { FilePickerCompat } from './utils/file-picker-compat.js'
+import { registerCfgLinkMenu } from './views/cfg-link-settings.js'
+import { applyHostedContext, getHostKind } from './auth/host-context.js'
+import { mountConnectionBanner } from './views/connection-banner.js'
+import { maybeShowFirstRunPrompt } from './views/first-run-prompt.js'
+import { syncInstalledModules } from './sync/modules-sync.js'
+import { syncSystemSchemas } from './sync/system-schema-sync.js'
+import { ActivityHeartbeat } from './services/activity-heartbeat.js'
+import { ProvisionDrain } from './services/provision-drain.js'
+import { JournalPullSync } from './services/journal-pull-sync.js'
+import { WorldActorSnapshot } from './services/world-actor-snapshot.js'
+import { WorldMacroSnapshot } from './services/world-macro-snapshot.js'
+import { WorldRollTableSnapshot } from './services/world-rolltable-snapshot.js'
+import { WorldItemSnapshot } from './services/world-item-snapshot.js'
+import { WorldPlaylistSnapshot } from './services/world-playlist-snapshot.js'
+import { WorldCardsSnapshot } from './services/world-cards-snapshot.js'
+import { WorldSceneSnapshot } from './services/world-scene-snapshot.js'
+import { WorldJournalSnapshot } from './services/world-journal-snapshot.js'
+import { WorldPackSnapshot } from './services/world-pack-snapshot.js'
+import { CompendiumPullSync } from './services/compendium-pull-sync.js'
+import { ActorPullSync } from './services/actor-pull-sync.js'
+import { MacroPullSync } from './services/macro-pull-sync.js'
+import { RollTablePullSync } from './services/rolltable-pull-sync.js'
+import { PlaylistPullSync } from './services/playlist-pull-sync.js'
+import { CardsPullSync } from './services/cards-pull-sync.js'
+import { FolderPullSync } from './services/folder-pull-sync.js'
+import { ItemPullSync } from './services/item-pull-sync.js'
+import { ModulePackImportSync } from './services/module-pack-import-sync.js'
+import { ScenePullSync } from './services/scene-pull-sync.js'
+import { registerJsonEditorHeaderButton } from './views/json-editor-header-button.js'
+import { registerSourcebookShelfButton } from './views/sourcebook-shelf.js'
+
+/* -------------------------------------------- */
+/*  Module-level State                           */
+/* -------------------------------------------- */
+
+const MODULE_ID = 'crit-fumble-core'
+// Derived from module.json AT RUNTIME (game.modules is populated before any
+// hook fires). The old hand-bumped constant here drifted from module.json TWICE
+// (2.13.0 vs 2.14.0 caught by fp#47, then 2.42.0 vs 2.48.0 caught by dt#268) —
+// "bump both together" is exactly the pin-without-a-bump-step failure class, so
+// the constant is gone: module.json is the ONLY version source.
+const MODULE_VERSION = () => game.modules?.get?.(MODULE_ID)?.version ?? 'unknown'
+
+/** @type {'full'|'narrative'} */
+let _featureMode = 'narrative'
+
+/** @type {string|null} e.g. '5e-compatible' */
+let _platformSystemSlug = null
+
+/**
+ * CFG campaign ids that have linked THIS Foundry world via the N:M join
+ * (`WorldAccessGrant` rows with `granteeType: 'campaign'`). Populated by
+ * `_resolveLinkedCampaigns` in the ready hook. Per-campaign flows
+ * (`_resolveFeatureMode`) iterate this list; an empty list is normal for an
+ * unlinked world and just skips those flows.
+ * @type {string[]}
+ */
+let _linkedCampaignIds = []
+
+/** @type {CoreAPIClient|null} */
+let _api = null
+
+/** @type {ActivityHeartbeat|null} */
+let _activityHeartbeat = null
+
+/** @type {ProvisionDrain|null} */
+let _provisionDrain = null
+/** @type {JournalPullSync|null} */
+let _journalPullSync = null
+
+/** @type {WorldActorSnapshot|null} */
+let _worldActorSnapshot = null
+/** @type {WorldMacroSnapshot|null} */
+let _worldMacroSnapshot = null
+/** @type {WorldRollTableSnapshot|null} */
+let _worldRollTableSnapshot = null
+/** @type {WorldItemSnapshot|null} */
+let _worldItemSnapshot = null
+/** @type {WorldPlaylistSnapshot|null} */
+let _worldPlaylistSnapshot = null
+/** @type {WorldCardsSnapshot|null} */
+let _worldCardsSnapshot = null
+/** @type {WorldSceneSnapshot|null} */
+let _worldSceneSnapshot = null
+/** @type {WorldJournalSnapshot|null} */
+let _worldJournalSnapshot = null
+
+/** @type {WorldPackSnapshot|null} */
+let _worldPackSnapshot = null
+
+/** @type {CompendiumPullSync|null} */
+let _compendiumPullSync = null
+
+/** @type {ActorPullSync|null} */
+let _actorPullSync = null
+/** @type {ModulePackImportSync|null} */
+let _modulePackImportSync = null
+
+/** @type {MacroPullSync|null} */
+let _macroPullSync = null
+/** @type {RollTablePullSync|null} */
+let _rollTablePullSync = null
+/** @type {PlaylistPullSync|null} */
+let _playlistPullSync = null
+/** @type {CardsPullSync|null} */
+let _cardsPullSync = null
+/** @type {FolderPullSync|null} */
+let _folderPullSync = null
+/** @type {ItemPullSync|null} */
+let _itemPullSync = null
+/** @type {ScenePullSync|null} */
+let _scenePullSync = null
+
+/* -------------------------------------------- */
+/*  Global Exposure                              */
+/* -------------------------------------------- */
+
+window.CFGCore = {
+  get version() {
+    return MODULE_VERSION()
+  },
+  /** @returns {'full'|'narrative'} */
+  featureMode: () => _featureMode,
+  /** @returns {string|null} */
+  platformSystemSlug: () => _platformSystemSlug,
+  /** @returns {string|null} */
+  /** @returns {string[]} Campaigns currently linked to this Foundry world via the N:M join. */
+  linkedCampaignIds: () => [..._linkedCampaignIds],
+  /**
+   * 'cfg-hosted' when Foundry is served from CFG infrastructure (#699 detect),
+   * 'self-hosted' otherwise.
+   * @returns {'cfg-hosted'|'self-hosted'}
+   */
+  hostKind: () => getHostKind(),
+  /** @type {CoreAPIClient|null} Set after init. */
+  api: null,
+}
+
+/* -------------------------------------------- */
+/*  Helpers                                      */
+/* -------------------------------------------- */
+
+/**
+ * Pick the right default for `coreApiUrl` based on how Foundry is being
+ * served. When the page path begins with `/servers/foundryvtt/` we're
+ * inside the CFG VTT proxy — core-browser is at the same origin (localdev
+ * tunnel, staging, or prod). Self-hosted Foundry falls through to the
+ * prod URL; the user can override via Module Settings.
+ *
+ * This sidesteps the (not-yet-implemented) `__CFG_HOSTED_CONTEXT__`
+ * injection that host-context.js anticipates — once the proxy injects
+ * the global, `applyHostedContext` overwrites this default with the
+ * server-supplied endpoint anyway, so this stays correct as a fallback.
+ */
+function _detectDefaultCoreApiUrl() {
+  if (typeof window === 'undefined') return 'https://core.crit-fumble.com'
+  try {
+    if (window.location.pathname.startsWith('/servers/foundryvtt/')) {
+      return window.location.origin
+    }
+  } catch {
+    // location access can throw in restricted contexts — non-fatal
+  }
+  return 'https://core.crit-fumble.com'
+}
+
+/**
+ * Extract the installation id from the page URL when running cfg-hosted.
+ * Post-route-rename, cfg-hosted Foundry is always served from
+ * `/servers/foundryvtt/{installationId}/...`. Reading the path is the
+ * cheapest + most reliable way to get the installation id — no
+ * dependency on the proxy injecting `__CFG_HOSTED_CONTEXT__` (which is
+ * stubbed for a future commit) or on the pair-flow having run.
+ *
+ * Returns null for self-hosted Foundry or when the URL doesn't match
+ * the cfg-hosted route shape.
+ */
+function _detectInstallationIdFromUrl() {
+  if (typeof window === 'undefined') return null
+  try {
+    const match = window.location.pathname.match(/^\/servers\/foundryvtt\/([^/]+)/)
+    return match?.[1] || null
+  } catch {
+    return null
+  }
+}
+
+/* -------------------------------------------- */
+/*  Init Hook — Register Settings & Keybindings */
+/* -------------------------------------------- */
+
+Hooks.once('init', () => {
+  console.log(`CFG Core | Initializing v${MODULE_VERSION()}`)
+
+  // ---- Settings ----
+
+  game.settings.register(MODULE_ID, 'coreApiUrl', {
+    name: 'CFG Endpoint',
+    hint: 'Crit-Fumble platform endpoint. Self-hosters change this; everyone else leaves the default.',
+    scope: 'world',
+    config: true,
+    type: String,
+    default: window.CORE_API_URL || _detectDefaultCoreApiUrl(),
+  })
+
+  // The legacy single-campaign `campaignId` setting has been retired. With
+  // many-to-many linking (`WorldAccessGrant`, granteeType 'campaign'), a world can host
+  // multiple campaigns and a campaign can be played across multiple worlds.
+  // The Linked Campaigns dialog (game.settings.registerMenu below) is the
+  // single source of truth; plugin-side flows that need a campaign id
+  // iterate over the linked set returned by /api/v1/account/foundry/campaigns.
+
+  // Set automatically by the pair flow (#698). Hidden from the settings UI
+  // so users can't paste in arbitrary strings; clear it via Unlink instead.
+  // World-scope keeps the key with the same protection as other GM secrets
+  // stored in Foundry's settings.db (Foundry has no built-in encryption for
+  // module settings — see the #698 issue body).
+  game.settings.register(MODULE_ID, 'apiKey', {
+    scope: 'world',
+    config: false,
+    type: String,
+    default: '',
+  })
+
+  // Optional installation ID returned by the pair flow once the server-side
+  // schema work in #700 lands. Not user-visible.
+  game.settings.register(MODULE_ID, 'installationId', {
+    scope: 'world',
+    config: false,
+    type: String,
+    default: '',
+  })
+
+  // First-run pair prompt suppression flag (#571). When the GM clicks
+  // "Don't Show Again" on the in-plugin prompt, this flag stops it firing on
+  // future world loads. Hidden from the settings UI — the dialog itself is
+  // the only way to set it; clearing happens automatically on a successful
+  // Link Now click so a future Unlink + reload re-surfaces the prompt.
+  game.settings.register(MODULE_ID, 'firstRunPromptDismissed', {
+    scope: 'world',
+    config: false,
+    type: Boolean,
+    default: false,
+  })
+
+  // Host-environment detection (#699): when Foundry is cfg-hosted, the plugin
+  // fetches its installation host key programmatically and stores it as the
+  // Bearer `apiKey` setting. That runs in the `ready` hook (awaited, before the
+  // API client is built) — see `applyHostedContext()` — so settings are live and
+  // the key is in place before the first heartbeat. Self-hosted / third-party
+  // Foundry uses the original pair-button flow inside the menu.
+  // Always register the link-menu surface — it renders Link/Unlink for
+  // self-hosted, and a read-only "Linked via CFG-hosted Foundry container"
+  // row for cfg-hosted (the buttons are hidden, see cfg-link-settings.js).
+  registerCfgLinkMenu()
+
+  /**
+   * Per-campaign officer position configuration (preset + requireLeader flag).
+   * Hidden from the settings UI — currently unused by any active surface,
+   * kept registered as `Object` so existing saved values don't error.
+   */
+  game.settings.register(MODULE_ID, 'campaignPositions', {
+    scope: 'world',
+    config: false,
+    type: Object,
+    default: {},
+  })
+
+  // ── Module Settings → Linked Campaigns ────────────────────────────────────
+  // GM-only multi-link manager. The `campaignId` setting (handled by the
+  // dropdown below) binds the world to ONE campaign for plugin-side sync;
+  // this dialog manages the N:M database link table — "which campaigns
+  // can be played in this world" — backed by /api/v1/account/foundry/campaigns.
+  game.settings.registerMenu(MODULE_ID, 'campaignLinks', {
+    name: 'Linked Campaigns',
+    label: 'Open Linked Campaigns',
+    hint: 'Manage which CFG campaigns can be played in this Foundry world. Many campaigns can share one world.',
+    icon: 'fas fa-link',
+    type: CfgCampaignLinksDialog,
+    restricted: true,
+  })
+
+  console.log(`CFG Core | Settings and keybindings registered`)
+})
+
+// NB the 3D config-injection hooks that used to live here (Wall Config "3D
+// Rendering", Scene/Level 3D wall defaults, Region 3D terrain, and the token-HUD
+// "Character View" button) moved out with the 3D overlay — they write/read flags
+// only the 3D viewer consumes, so they ship with the optional 3D module, not the
+// Server Manager.
+
+/* -------------------------------------------- */
+/*  Ready Hook — Main Initialization            */
+/* -------------------------------------------- */
+
+/**
+ * Cold-load stagger (cs#153 lever 3). A cold world load streams ~250 asset
+ * requests through core-server's vtt-proxy (prod evidence: 105–125 req/5s
+ * bursts), and the `ready` hook used to pile every sync service's initial
+ * sweep on top of that same window. Spreading the starts a few seconds apart
+ * keeps the plugin's own callbacks out of the flood.
+ *
+ * Safe to defer: every staggered service has its own periodic safety-net
+ * sweep/tick (10–15 min sweeps, 30–60s pull ticks), so a delayed start only
+ * postpones first convergence by seconds — nothing is lost. Services whose
+ * first call is load-bearing (activity heartbeat, provision drain, the
+ * world-load report) are NOT staggered.
+ */
+const BOOT_STAGGER_BASE_MS = 3_000
+const BOOT_STAGGER_STEP_MS = 2_000
+let _bootStaggerSlot = 0
+function _staggerStart(label, fn) {
+  const delay = BOOT_STAGGER_BASE_MS + BOOT_STAGGER_STEP_MS * _bootStaggerSlot++
+  setTimeout(() => {
+    Promise.resolve()
+      .then(fn)
+      .catch((err) => console.warn(`CFG Core | deferred start failed (${label}):`, err?.message || err))
+  }, delay)
+}
+
+Hooks.once('ready', async () => {
+  console.log(`CFG Core | Ready`)
+
+  // Auto-correct `coreApiUrl` + `installationId` when running cfg-hosted
+  // (proxied at `/servers/foundryvtt/{installationId}/*`). Existing worlds
+  // may have stale values saved before the smart default landed — typically
+  // the prod URL, which breaks iframe embedding in localdev / staging /
+  // private tunnels. The installationId derives from the page path so the
+  // plugin doesn't depend on `__CFG_HOSTED_CONTEXT__` injection or the
+  // pair-flow having run. Idempotent: only writes on actual change.
+  try {
+    if (typeof window !== 'undefined' && window.location.pathname.startsWith('/servers/foundryvtt/')) {
+      const detectedUrl = window.location.origin
+      const storedUrl = game.settings.get(MODULE_ID, 'coreApiUrl')
+      if (storedUrl !== detectedUrl) {
+        await game.settings.set(MODULE_ID, 'coreApiUrl', detectedUrl)
+        console.log(`CFG Core | coreApiUrl auto-corrected to ${detectedUrl} (was ${storedUrl})`)
+      }
+
+      const detectedInstallId = _detectInstallationIdFromUrl()
+      if (detectedInstallId) {
+        const storedInstallId = game.settings.get(MODULE_ID, 'installationId')
+        if (storedInstallId !== detectedInstallId) {
+          await game.settings.set(MODULE_ID, 'installationId', detectedInstallId)
+          console.log(`CFG Core | installationId auto-corrected to ${detectedInstallId} (was ${storedInstallId || 'unset'})`)
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('CFG Core | host-context auto-correct failed (non-fatal):', err?.message || err)
+  }
+
+  // Steer FilePicker away from User Data root, where Foundry blocks uploads
+  // (modules/ and systems/ are overwritten on updates). Point it at the
+  // current world's assets/ folder — pre-created server-side on provision.
+  try {
+    const FP = FilePickerCompat.getClass()
+    if (FP && game.world?.id) {
+      FP.LAST_BROWSED_DIRECTORY = `worlds/${game.world.id}/assets`
+    }
+  } catch (err) {
+    console.warn('CFG Core | FilePicker default path setup failed (non-fatal):', err)
+  }
+
+  // Programmatic pairing: for cfg-hosted Foundry, fetch + store the installation
+  // host key (Bearer) BEFORE building the API client, so the heartbeats
+  // authenticate as the installation. Owner-scoped on the server; a non-owner GM
+  // gets no key and `applyHostedContext` clears any stale one → session fallback.
+  // Awaited so the setting is live before the first heartbeat fires below.
+  if (getHostKind() === 'cfg-hosted') {
+    try {
+      await applyHostedContext()
+    } catch (err) {
+      console.warn('CFG Core | applyHostedContext failed (non-fatal, using session auth):', err?.message || err)
+    }
+  }
+
+  const apiUrl = game.settings.get(MODULE_ID, 'coreApiUrl')
+  // Both hosting modes read the same stored key: cfg-hosted gets an installation
+  // key from `applyHostedContext` (programmatic pairing) or, if that couldn't mint
+  // one, an empty value → session-cookie auth (same-origin). Self-hosted gets its
+  // paired key. An empty/absent setting → null → session-cookie auth.
+  const apiKey = game.settings.get(MODULE_ID, 'apiKey') || null
+
+  // apiKey set → Bearer token (installation key or self-hosted pair). Null →
+  // same-origin session-cookie auth (cfg-hosted non-owner GM fallback).
+  _api = new CoreAPIClient(apiUrl, apiKey)
+  window.CFGCore.api = _api
+  console.log(`CFG Core | Auth mode: ${apiKey ? 'self-hosted (API key)' : 'core-hosted (session cookie)'}`)
+
+  // Resolve the campaigns linked to this Foundry world (N:M join, source of
+  // truth lives in the platform DB). `_linkedCampaignIds` drives the
+  // per-campaign report + module-check flows; an empty list is fine —
+  // those flows just skip.
+  _linkedCampaignIds = await _resolveLinkedCampaigns()
+
+  // Report system to each linked campaign and link this Foundry user to their
+  // platform account in parallel. These two stay on the critical path: feature
+  // mode gates what mounts below, and the user link is what SSO'd players wait on.
+  await Promise.allSettled([_resolveFeatureMode(), _linkPlatformUser(apiUrl, apiKey)])
+
+  if (game.user.isGM) {
+    // #339 — POST `game.modules` to CFG so the platform UI can list what's
+    // installed in this Foundry world. Non-fatal on failure.
+    _staggerStart('modules-sync', () => syncInstalledModules())
+    // dt#212 — introspect the system's own DataModels and push them, so the platform's JSON
+    // editor can warn before Foundry silently discards a field. Non-fatal on failure.
+    _staggerStart('system-schema-sync', () => syncSystemSchemas())
+  }
+
+  // Active-user heartbeat (cfs#109) — reports game.users.active to Core so
+  // server-side idle-shutdown automation has a real signal. Only runs when
+  // this world is linked to an installation (cfg-hosted, or self-hosted
+  // after pairing); the single-reporter election lives inside the class.
+  const heartbeatInstallId = game.settings.get(MODULE_ID, 'installationId') || null
+  if (heartbeatInstallId) {
+    _activityHeartbeat = new ActivityHeartbeat(_api, heartbeatInstallId)
+    _activityHeartbeat.start()
+  }
+
+  // Runtime player provisioning (cfs live-world SSO). When this client is a GM,
+  // drain the platform's pending-provision queue — create the reserved Foundry
+  // User docs (Foundry only lets a GM do this) so the proxy can SSO invited
+  // players into a RUNNING world. Single-GM election lives in the class, so it's
+  // safe that this starts in every GM browser AND the headless service-GM.
+  if (heartbeatInstallId && game.user.isGM) {
+    _provisionDrain = new ProvisionDrain(_api, heartbeatInstallId)
+    _provisionDrain.start()
+  }
+
+  // Whole-world actor mirror (cfs#17) — snapshot every actor to the platform so
+  // their sheets stay viewable on the web once this world goes offline. GM-only
+  // (a GM sees all actors with full data); the single-reporter election lives in
+  // the class. Runs for any linked world — installation key (cfg-hosted) OR a
+  // paired key (self-hosted), which is what makes self-hosted sheets viewable.
+  if ((heartbeatInstallId || apiKey) && game.user.isGM) {
+    _worldActorSnapshot = new WorldActorSnapshot(_api)
+    _staggerStart('actor-snapshot', () => _worldActorSnapshot.start())
+
+    // World Macros (dt#214). Same reporter election + linked-world gate. Tiny documents; the whole
+    // collection ships each sweep so PlayTable can list/edit/hotbar them. Chat macros run in
+    // PlayTable's chat; script macros are edit-here / run-in-Foundry.
+    _worldMacroSnapshot = new WorldMacroSnapshot(_api)
+    _staggerStart('macro-snapshot', () => _worldMacroSnapshot.start())
+
+    // World RollTables (dt#249). Same reporter election + linked-world gate. Small documents;
+    // the whole collection ships each sweep. Listens to the embedded TableResult hooks too —
+    // a row edit fires the result's hooks, not the parent's, and content lives in the rows.
+    _worldRollTableSnapshot = new WorldRollTableSnapshot(_api)
+    _staggerStart('rolltable-snapshot', () => _worldRollTableSnapshot.start())
+
+    // World standalone Items (dt#250). The world's Item DIRECTORY only — actor-embedded
+    // items ride the actor snapshot. Listens to the ActiveEffect hooks filtered to
+    // standalone parents; an effect edit does not bump the item's own clock.
+    _worldItemSnapshot = new WorldItemSnapshot(_api)
+    _staggerStart('item-snapshot', () => _worldItemSnapshot.start())
+
+    // World Playlists + Cards (dt#249). Same pattern as roll tables — both listen to their
+    // embedded document hooks (PlaylistSound / Card) since content lives in the children.
+    _worldPlaylistSnapshot = new WorldPlaylistSnapshot(_api)
+    _staggerStart('playlist-snapshot', () => _worldPlaylistSnapshot.start())
+    _worldCardsSnapshot = new WorldCardsSnapshot(_api)
+    _staggerStart('cards-snapshot', () => _worldCardsSnapshot.start())
+
+    // World Scenes (fp#48). Same reporter election + linked-world gate. Batched (scenes can be
+    // large). The push is what lets the platform show scenes WHILE the world runs — the LevelDB
+    // read is locked then.
+    _worldSceneSnapshot = new WorldSceneSnapshot(_api)
+    _staggerStart('scene-snapshot', () => _worldSceneSnapshot.start())
+
+    // World→platform JOURNAL leg (dt#247, closes cs#186). NOT a mirror: the platform stores
+    // nothing from this for viewing. It carries the two facts the push log structurally
+    // cannot supply — is the entry still there (reconcile), and did the world edit it more
+    // recently than we did (`_stats.modifiedTime`). Without it a GM's Foundry-side delete
+    // is never noticed and a Foundry-side edit silently wins.
+    _worldJournalSnapshot = new WorldJournalSnapshot(_api)
+    _staggerStart('journal-snapshot', () => _worldJournalSnapshot.start())
+
+    // World-authored compendium packs (dt#185). Gated identically — same reporter election, same
+    // linked-world requirement. Only packs Foundry marks packageType 'world' are sent; module
+    // packs belong to their publisher and are never ingested.
+    _worldPackSnapshot = new WorldPackSnapshot(_api)
+    _staggerStart('pack-snapshot', () => _worldPackSnapshot.start())
+
+    // Core→Foundry write-back for those packs (dt#185 slice 3). Without it a platform edit is
+    // held on the platform forever — visible in PlayTable, absent from the world.
+    _compendiumPullSync = new CompendiumPullSync(_api)
+    _staggerStart('compendium-pull', () => _compendiumPullSync.start())
+  }
+
+  // Core→Foundry actor write-back (fp#46) — pull the platform characters whose actor
+  // doc differs from what this world last held and write them in, CREATING the ones
+  // that aren't here yet. That create is the fix: the predecessor this replaced
+  // (CharacterPullSync + CharacterSyncManager) was update-only, so a character made in
+  // PlayTable never appeared at the table at all.
+  //
+  // Gated on the INSTALLATION id, like the journal sync below and unlike the old
+  // character sync, which also accepted a paired key. These endpoints are
+  // installation-scoped and resolve the world by (hostingInstallationId,
+  // nativeIdentifier), which a paired self-hosted world has no row for — so a key-only
+  // gate would just 404 every tick. Self-hosted rides the #184 follow-up.
+  if (heartbeatInstallId && game.user.isGM) {
+    _actorPullSync = new ActorPullSync(_api, heartbeatInstallId)
+    _staggerStart('actor-pull', () => _actorPullSync.start())
+
+    // Core→Foundry macro write-back (dt#245). The platform has staked a platformEditedAt
+    // claim on GM macro edits since dt#214 and the mirror has dutifully HELD it against the
+    // next snapshot — but nothing ever carried the edit into the world, so it was held and
+    // then silently discarded. This is the missing half. Same installation gate as the
+    // actor + journal syncs.
+    _macroPullSync = new MacroPullSync(_api, heartbeatInstallId)
+    _staggerStart('macro-pull', () => _macroPullSync.start())
+
+    // Core→Foundry rolltable write-back (dt#249). Same claim-is-the-queue lifecycle as
+    // macros; the one embedded collection (results) is reconciled by the engine.
+    _rollTablePullSync = new RollTablePullSync(_api, heartbeatInstallId)
+    _staggerStart('rolltable-pull', () => _rollTablePullSync.start())
+
+    // Core→Foundry playlist + cards write-back (dt#249). Claim-is-the-queue, like macros.
+    // Playlist NEVER writes `playing` (parent or sound) — settable via plain update AND
+    // create, measured; it would start audio for every connected client.
+    _playlistPullSync = new PlaylistPullSync(_api, heartbeatInstallId)
+    _staggerStart('playlist-pull', () => _playlistPullSync.start())
+    _cardsPullSync = new CardsPullSync(_api, heartbeatInstallId)
+    _staggerStart('cards-pull', () => _cardsPullSync.start())
+
+    // Core→Foundry folder write-back (dt#250 slice 2). Claim-is-the-queue plus the two
+    // firsts: platform-born CREATES (everPushed: false → the engine's keepId create) and
+    // platform-staked DELETES (plain folder-only delete — contents promote to root,
+    // measured; the cascade options are never issued).
+    _folderPullSync = new FolderPullSync(_api, heartbeatInstallId)
+    _staggerStart('folder-pull', () => _folderPullSync.start())
+
+    // Core→Foundry standalone-item write-back (dt#250). Claim-is-the-queue; the engine
+    // reconciles embedded effects and delete+recreates on a type change (Actor case).
+    _itemPullSync = new ItemPullSync(_api, heartbeatInstallId)
+    _staggerStart('item-pull', () => _itemPullSync.start())
+
+    // Module-pack import queue (dt#185) — carries a requested module/system pack's documents
+    // (the free SRD packages) from this world into a scoped compendium. The licensing
+    // allowlist is enforced server-side on every push; this client is a courier. Same
+    // installation gate + reporter election as the syncs above.
+    _modulePackImportSync = new ModulePackImportSync(_api, heartbeatInstallId)
+    _staggerStart('module-pack-import', () => _modulePackImportSync.start())
+
+    // Core→Foundry scene sync (dt#246) — platform-authored scenes reach the table,
+    // creates included. `active` is never synced: it is writable through a plain update(),
+    // so pushing it would change which scene every connected player is looking at.
+    _scenePullSync = new ScenePullSync(_api, heartbeatInstallId)
+    _staggerStart('scene-pull', () => _scenePullSync.start())
+  }
+
+  // Core→Foundry party-journal sync (#184) — pull the platform journal entries
+  // whose doc differs from what this world last held and write them in, so a note
+  // written in PlayTable shows up at the table. GM-only (creating documents and
+  // setting ownership are GM-only); the single-reporter election lives in the
+  // class. Gated on the INSTALLATION id specifically — unlike the actor mirror
+  // above, these endpoints are installation-scoped and resolve the world by
+  // (hostingInstallationId, nativeIdentifier), which a paired self-hosted world
+  // has no row for. Self-hosted journal sync needs its own path (#184 follow-up).
+  if (heartbeatInstallId && game.user.isGM) {
+    _journalPullSync = new JournalPullSync(_api, heartbeatInstallId)
+    _staggerStart('journal-pull', () => _journalPullSync.start())
+  }
+
+  // dt#212 parity — an "Edit JSON" control on Item/Actor/JournalEntry sheet headers, opening the
+  // CFG JSON editor with the same discard/required-empty diagnostics and pre-save health probe
+  // PlayTable runs. GM-only; injected via the generic renderDocumentSheetV2 hook.
+  try {
+    registerJsonEditorHeaderButton()
+  } catch (err) {
+    console.warn('CFG Core | JSON editor button registration failed (non-fatal):', err)
+  }
+
+  // Sourcebook shelf (dt#253 shell + cs#212 renderer): compendium PDF entries read
+  // page-by-page as server-rastered images — the file itself never reaches this client.
+  // Listed for any user (reading a shared book is a player feature); the API's own
+  // pack-read-level gating decides what each caller actually sees.
+  try {
+    registerSourcebookShelfButton(_api, () => _linkedCampaignIds)
+  } catch (err) {
+    console.warn('CFG Core | Sourcebook shelf registration failed (non-fatal):', err)
+  }
+
+  // NB the CFG sidebar rail that used to mount here is GONE (fp#47). It was
+  // disabled 2026-06-22 — it loaded an iframe to /foundry/sidebar, which 404s,
+  // and its own note said the rail "isn't the surface we want anyway". The
+  // replacement is a proper ApplicationV2 "Surface" window (tracked separately);
+  // that's a rewrite, so the dead file bought nothing. `git log` has it.
+
+  // Offline banner (#699). Subscribes to `pluginConnectionState` and surfaces
+  // a small fixed-position pill whenever fetchCfg's last call hit the network
+  // error branch. Local Foundry features keep working — the banner is purely
+  // informational.
+  mountConnectionBanner()
+
+  // First-run pair prompt (#571). Self-hosted / third-party Foundry GMs see
+  // a one-tap "Link this world to CFG" dialog when the world has never been
+  // paired. Players, CFG-hosted worlds, already-linked worlds, and worlds
+  // where the GM clicked "Don't Show Again" are all skipped inside
+  // maybeShowFirstRunPrompt. The 1.5s defer lets Foundry's main UI land
+  // before our dialog steals focus.
+  setTimeout(() => maybeShowFirstRunPrompt(), 1500)
+
+  // Report the loaded world to CFG so the platform's Server Manager UI
+  // can show "running — <World> loaded" instead of the stale FOUNDRY_WORLD
+  // env it used to read. The platform routes installation resolution
+  // through the player's API key; on core-hosted (no apiKey) the session
+  // cookie covers it. Non-fatal — the platform falls back to "loading…"
+  // and the 15-min safety net re-converges.
+  _reportWorldLoaded(apiKey).catch((err) => {
+    console.warn('CFG Core | world-load callback failed (non-fatal):', err)
+  })
+
+  console.log(
+    `CFG Core | Ready — featureMode: ${_featureMode}, platform: ${_platformSystemSlug ?? 'unknown'}, ` +
+      `linkedCampaigns: [${_linkedCampaignIds.join(', ')}]`,
+  )
+})
+
+/* -------------------------------------------- */
+/*  World-load Reporter                          */
+/* -------------------------------------------- */
+
+/**
+ * POST the active world id to CFG so the platform's runtime state map
+ * knows which world is loaded right now. Fired once per `ready` hook —
+ * idempotent on the server side (repeated POSTs for the same world just
+ * refresh `loadedAt`).
+ *
+ * Auth: the world-scoped `apiKey` (set by the pair flow on self-hosted,
+ * by `applyHostedContext` on cfg-hosted) goes in as a Bearer token. When
+ * absent we let the request through with whatever auth the iframe /
+ * session cookie provides — the platform falls back to session-cookie
+ * identity in that path.
+ */
+async function _reportWorldLoaded(apiKey) {
+  if (!game.world?.id) return
+  const apiUrl = game.settings.get(MODULE_ID, 'coreApiUrl')
+  if (!apiUrl) return
+  const url = `${apiUrl.replace(/\/+$/, '')}/api/v1/foundry/worlds/${encodeURIComponent(game.world.id)}/status`
+  const headers = { 'content-type': 'application/json' }
+  if (apiKey) headers['authorization'] = `Bearer ${apiKey}`
+  const res = await fetch(url, {
+    method: 'POST',
+    headers,
+    credentials: 'include',
+    // pluginVersion rides the heartbeat so the platform's fleet report
+    // (dt#268/dt#183) knows what each world actually RUNS — the installed
+    // files on disk are not evidence of the running version.
+    body: JSON.stringify({ status: 'ready', pluginVersion: MODULE_VERSION() }),
+  })
+  if (!res.ok) {
+    throw new Error(`world-load callback returned HTTP ${res.status}`)
+  }
+}
+
+/* -------------------------------------------- */
+/*  Linked Campaigns + System Reporter           */
+/* -------------------------------------------- */
+
+/**
+ * Fetch the set of CFG campaigns linked to THIS Foundry world via the
+ * many-to-many join (`WorldAccessGrant`, granteeType 'campaign'). The GM manages the
+ * link list in Module Settings → Linked Campaigns; this is the
+ * canonical "which campaigns can play in this world" lookup.
+ *
+ * Returns an empty array when nothing is linked or the fetch fails —
+ * downstream flows just skip rather than block plugin boot.
+ */
+async function _resolveLinkedCampaigns() {
+  if (!_api) return []
+  const installId = game.settings.get(MODULE_ID, 'installationId') || null
+  const worldId = game.world?.id ?? null
+  if (!installId || !worldId) return []
+  try {
+    const data = await _api.get('/api/v1/account/foundry/campaigns')
+    const campaigns = Array.isArray(data?.data) ? data.data : []
+    const linked = []
+    for (const c of campaigns) {
+      // `installId` comes from the URL segment, which post-#162 can be EITHER the
+      // installation cuid or its slug (the proxy resolves by id then slug). Match
+      // on either form so slug-hosted worlds still resolve their linked campaigns —
+      // otherwise the write-back pull-loop never fires (cfs#17 #147).
+      const matches = (c.linkedWorlds ?? []).some(
+        (l) =>
+          (l.installationId === installId || (l.installationSlug && l.installationSlug === installId)) &&
+          l.worldId === worldId,
+      )
+      if (matches) linked.push(c.id)
+    }
+    return linked
+  } catch (err) {
+    console.warn('CFG Core | linked-campaign resolution failed (non-fatal):', err?.message ?? err)
+    return []
+  }
+}
+
+/**
+ * Adopt the FIRST linked campaign's `featureMode` + `platformSystemSlug` for
+ * plugin-local state by READING its Foundry integration status. featureMode is
+ * derived server-side from the campaign's configured game system — there is no
+ * report-by-PATCH anymore (the old single-campaign `/api/campaigns/{id}/foundry`
+ * PATCH was retired). Every user can read it, so no GM gate.
+ *
+ * No-op when no campaigns are linked (the world plays in 'narrative' mode).
+ */
+async function _resolveFeatureMode() {
+  if (!_api || _linkedCampaignIds.length === 0) return
+
+  try {
+    for (const campaignId of _linkedCampaignIds) {
+      try {
+        const { foundry } = (await _api.getFoundryStatus(campaignId)) ?? {}
+        if (foundry?.featureMode) {
+          _featureMode = foundry.featureMode
+          _platformSystemSlug = foundry.platformSystemSlug ?? null
+          break // first linked campaign wins
+        }
+      } catch (err) {
+        console.warn(`CFG Core | featureMode resolve failed for ${campaignId} (non-fatal):`, err?.message ?? err)
+      }
+    }
+
+    console.log(
+      _featureMode === 'full'
+        ? `CFG Core | featureMode: full | platform: ${_platformSystemSlug}`
+        : `CFG Core | featureMode: narrative`,
+    )
+  } catch (err) {
+    console.warn('CFG Core | featureMode resolution failed (non-fatal):', err?.message ?? err)
+  }
+}
+
+/* -------------------------------------------- */
+/*  Platform Account Linking                     */
+/* -------------------------------------------- */
+
+/**
+ * Link this Foundry user to their Core platform account.
+ *
+ * Auth source:
+ *   - cfg-hosted Foundry: the same-origin session cookie identifies the
+ *     caller automatically (no apiKey on the request).
+ *   - Self-hosted Foundry: the world-scoped apiKey set by the pair flow
+ *     (Module Settings → Crit-Fumble Link). When absent, the call is
+ *     anonymous and silently no-ops.
+ *
+ * On success: stores platformUserId in a user flag and broadcasts the
+ *   platformUserId↔foundryUserId mapping so other clients can build
+ *   their identity maps.
+ */
+async function _linkPlatformUser(apiUrl, apiKey) {
+  const api = new CoreAPIClient(apiUrl, apiKey)
+  try {
+    const data = await api.get('/api/v1/account/user')
+    const platformUserId = data?.user?.id
+    if (!platformUserId) return
+
+    await game.user.setFlag(MODULE_ID, 'platformUserId', platformUserId)
+    console.log(`CFG Core | Account linked: platform ${platformUserId} ↔ Foundry ${game.user.id}`)
+
+    game.socket.emit('module.crit-fumble-core', {
+      type: 'av-identity',
+      platformUserId,
+      foundryUserId: game.user.id,
+    })
+  } catch (err) {
+    console.warn('CFG Core | Platform account link failed (non-fatal):', err.message)
+  }
+}
+
+
+/* -------------------------------------------- */
+/*  Feature Mode                                 */
+/* -------------------------------------------- */
+//
+// The boot toast that used to live here was REMOVED (fp#47). It told every user
+// "Narrative tools active — voice, quests, party roster, chat", and none of that
+// was true from this plugin's side: voice is server-side (Discord/ReSesh), the
+// quests api-client method has no caller, "party roster" is unreachable code
+// (views/party-roster.js has no importer and calls a `cfg.campaignId()` that no
+// longer exists), and there is no chat surface. The `full` variant promised
+// "<system> tools enabled" and enabled nothing.
+//
+// There was no accurate rewrite available, because `_featureMode` GATES NOTHING:
+// it is resolved per-campaign from Core (`_resolveFeatureMode`), logged, and
+// exposed as `window.CFGCore.featureMode()` — but no code branches on it. Left in
+// place rather than ripped out (it's public surface and a real platform concept),
+// but do not add UI that claims it does something until it does.
