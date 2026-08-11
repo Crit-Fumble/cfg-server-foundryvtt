@@ -27,7 +27,7 @@
     "js-yaml": "^4.2.0"
   },
   "devDependencies": {
-    "@crit-fumble/shared": "^1.52.1",
+    "@crit-fumble/shared": "^1.54.0",
     "@playwright/test": "^1.49.0",
     "dotenv": "^17.4.2",
     "esbuild": "^0.28.1",
