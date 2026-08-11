@@ -1,3 +1,13 @@
 #!/usr/bin/env sh
 # Block pushes when tests fail.
+#
+# Mirrors CI Gate's three jobs so a push does not discover locally-preventable
+# breakage on the runner. `npm test` alone was the whole hook until 2026-08-10,
+# which meant the two pure guards CI requires — the Playwright pin triangle and
+# the module version bump — ran nowhere on this machine.
+#
+# All three are offline: no registry, no Docker, no network.
+set -e
 npm test --silent
+npm run test:agent --silent
+npm run test:module-version --silent

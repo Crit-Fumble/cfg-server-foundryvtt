@@ -62,6 +62,35 @@ jobs:
           node-version-file: .nvmrc
       - run: npm run test:agent
 
+  # The module's release channel is `releases/latest/download/`, named by
+  # module.json's own manifest/download URLs — so a `v*` tag IS the publish, with
+  # no separate step and no staging tier. Nothing checked that the VERSION moved
+  # when the packed tree did.
+  #
+  # Hosted worlds survive that by accident (syncCfgPlugin reinstalls with
+  # force: true every launch, never reading the version). Self-hosted worlds do
+  # not: Foundry compares the manifest version to decide an update exists, so an
+  # unbumped release leaves them on old code reporting itself up to date.
+  #
+  # Runs pre-merge on purpose. At release time the tag is already pushed, and the
+  # fix would be deleting and re-cutting it.
+  #
+  # `fetch-depth: 0` is load-bearing — the check diffs against the newest `v*`
+  # tag reachable from HEAD, and the default shallow clone has neither the tags
+  # nor the history to do it.
+  module-version:
+    name: Module version bump
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+      - run: npm run test:module-version
+
   # ── THE ONLY REQUIRED CONTEXT ─────────────────────────────────────────────
   # Branch protection requires `ci-gate` and nothing else, so renaming or
   # splitting a job needs no branch-protection change.
@@ -78,7 +107,7 @@ jobs:
   ci-gate:
     name: CI Gate
     if: always()
-    needs: [unit, agent-pin]
+    needs: [unit, agent-pin, module-version]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

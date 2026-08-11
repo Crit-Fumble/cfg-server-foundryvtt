@@ -13,6 +13,7 @@
     "e2e:logs": "docker compose -f e2e/compose.yml logs -f",
     "test": "npm --prefix module test",
     "test:agent": "node --test agent/check-playwright-pin.test.mjs",
+    "test:module-version": "node --test module/check-version-bump.test.mjs",
     "module:zip": "node module/scripts/build-zip.js",
     "prepare": "husky"
   },
