@@ -4,12 +4,22 @@ name: release
 #
 # Triggered on `v*` tag pushes (e.g. `git tag v0.1.0 && git push --tags`) and
 # manually via the Actions UI. Pushed to ghcr.io/crit-fumble/cfg-server-foundryvtt
-# with: the git ref (e.g. v0.1.0), `latest` (`v*` tags ONLY), sha-<short>, and
-# `14` — the Foundry MAJOR tag (felddy-style moving tag for the 14.x line). The CFG
-# platform launches campaign containers as `<imageName>:<foundryMajor>` (see
-# foundry-platform getFoundryImageTag), so `cfg-server-foundryvtt:14` is the tag the
-# core-server actually pulls. Bump it alongside the felddy base `FROM` digest when
-# moving to Foundry 15.
+# with: the git ref (e.g. v0.1.0), sha-<short>, and — on `v*` tags ONLY — `latest`
+# plus `14`, the Foundry MAJOR tag (felddy-style moving tag for the 14.x line).
+# Bump `14` alongside the felddy base `FROM` digest when moving to Foundry 15.
+#
+# ⛔ `14` IS TAG-GATED FOR THE SAME REASON `latest` IS, AND IT MATTERS MORE.
+# The CFG platform launches campaign containers as `<imageName>:<foundryMajor>`
+# (foundry-platform getFoundryImageTag), so once `foundryImage` points here,
+# `cfg-server-foundryvtt:14` — NOT `:latest` — is the tag core-server actually
+# pulls at every user launch. It was published unconditionally until 2026-08-10,
+# which meant a `workflow_dispatch` from ANY branch could put un-promoted code on
+# the launch path while `latest` sat correctly gated one line below. Only the
+# absence of `foundryImage` pointing here kept that theoretical.
+#
+# ⚠️ The org-wide guard does NOT cover this. `check-workflow-tag-coupling.mjs`
+# inspects `value=latest` lines only, so it reported this file green throughout.
+# Do not read a passing guard as proof the launcher-pulled tag is gated.
 #
 # Also builds the service-GM drain DRIVER image (agent/) -> ghcr.io/crit-fumble/
 # cfg-foundry-service-gm, the one-shot headless Chromium container core-server's
@@ -55,7 +65,7 @@ jobs:
           images: ghcr.io/crit-fumble/cfg-server-foundryvtt
           tags: |
             type=ref,event=tag
-            type=raw,value=14
+            type=raw,value=14,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
             type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
             type=raw,value=${{ inputs.tag }},enable=${{ github.event_name == 'workflow_dispatch' }}
             type=sha,prefix=sha-,format=short
