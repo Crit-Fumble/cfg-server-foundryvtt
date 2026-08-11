@@ -13,6 +13,25 @@
 # (cfg-core-server already documents felddy rolling 14.361 -> 14.364 stranding
 # installs). A digest makes the image reproducible + the swap/rollback symmetric.
 #
+# ── THE PIN BELOW IS felddy 14.365 ──────────────────────────────────────────
+# Verified against the registry, not Docker Hub's tag JSON: both `:14` and
+# `:14.365` resolve to bb8402d7…, and the previous pin 097f876d… is `:14.364`.
+#
+# ⛔ THIS DIGEST IS THE ONLY VERSION KNOB THIS FILE MAY EVER HAVE. `ARG
+# FOUNDRY_VERSION` is a permanent anti-pattern here: the Foundry APP version is
+# per-install platform state, resolved at launch by the activation/updater flow
+# (`resolveLaunchFoundryVersion`, foundry-management.ts), because a BYO-license
+# install owns one-way world migrations and its own module compatibility. An
+# image-level version pin would move every user's worlds at once. Bumping this
+# digest changes the felddy DEFAULT the image ships with; it does not change
+# what any launch runs.
+#
+# The daily `upstream-watch` in cfg-core-dev-tools now watches this line and
+# opens a bump PR when felddy's `:14` moves — before that it rotted silently for
+# a month. It rewrites the FROM digest and nothing else; if you restructure this
+# line, update the `foundryvtt` case in that workflow or its sed will hard-fail
+# (deliberately loud, never a quiet no-op).
+#
 # Future additive capabilities land behind default-OFF env flags, each on its own
 # prove-passthrough cycle: a CO-LOCATED headless service-GM provisioning agent
 # (SERVICE_GM_ENABLED, talking to localhost:30000), and the baked crit-fumble-core
@@ -24,7 +43,7 @@
 # entrypoint + bash supervisor stays PID 1 — load-bearing: a clean SIGTERM is the
 # only thing that unlocks the world's LevelDB on shutdown.
 
-FROM felddy/foundryvtt@sha256:097f876d9c79f074380e219bf93753fa1916f31624637776fcf23c2dd3bb07fa
+FROM felddy/foundryvtt@sha256:bb8402d7098d0dcc136bf47c8932c0a1de5e405e021ca1710691cdd0ebdff730
 
 LABEL org.opencontainers.image.title="cfg-server-foundryvtt"
 LABEL org.opencontainers.image.description="CFG server-side wrapper for FoundryVTT hosting — additive felddy superset"
