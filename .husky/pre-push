@@ -6,8 +6,15 @@
 # which meant the two pure guards CI requires — the Playwright pin triangle and
 # the module version bump — ran nowhere on this machine.
 #
-# All three are offline: no registry, no Docker, no network.
+# All four are offline: no registry, no Docker, no network.
+#
+# ⚠️ The felddy contract check has TWO halves and only the offline one belongs here.
+# `test:image-contract` runs its mutation suite against fixtures (fast, hermetic).
+# `check:image-contract` builds the image and pulls ~115 MB from Docker Hub — no
+# push should do that, so it stays CI-only. Run it by hand before touching the
+# Dockerfile: npm run check:image-contract
 set -e
 npm test --silent
 npm run test:agent --silent
 npm run test:module-version --silent
+npm run test:image-contract --silent

@@ -7,7 +7,13 @@
 # cfg-core-server's `foundryImage` at it is a provably byte-identical, one-config
 # change that reverts to felddy in one line. felddy keeps owning the licensed
 # binary download/cache, the license host-binding, Config/admin.txt, the
-# /auth /join /setup surface, the /data layout, and uid 1000:1001.
+# /auth /join /setup surface, the /data layout, and uid 1000:1000.
+#
+# ⚠️ THE UID IS 1000:1000, NOT 1000:1001 — this line said 1001 until 2026-08-15,
+# and so does README.md. 1001 is CFG_DATA_GID, a SUPPLEMENTARY group cfg-core-server
+# adds at launch (`groupAdd`), never the image's own gid. Verified: `id` in this
+# image reports uid=1000(node) gid=1000(node). check-felddy-contract.mjs asserts
+# the real values, so a reader who "fixes" the image to match the old prose fails CI.
 #
 # Why pin the DIGEST, not the rolling `:14` tag: felddy's :14 shifts under you
 # (cfg-core-server already documents felddy rolling 14.361 -> 14.364 stranding

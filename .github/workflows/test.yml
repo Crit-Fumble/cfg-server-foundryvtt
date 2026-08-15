@@ -1,8 +1,15 @@
 name: test
 
-# CI for the CFG Server Manager Foundry module (module/). The container wrapper
-# has no unit tests — its verification is the e2e harness (e2e/), which needs a
-# licensed Foundry and runs locally, not here.
+# CI for the CFG Server Manager Foundry module (module/) AND, since 2026-08-15,
+# the container wrapper's felddy contract (check-felddy-contract.mjs).
+#
+# ⚠️ The wrapper is verified at TWO altitudes and only one of them is here. This
+# workflow proves the image is an additive superset of the pinned base and still
+# carries what cfg-core-server depends on — no license, no secrets. It does NOT
+# prove Foundry works: the license host-binding, admin.txt authenticating, the
+# /join /setup surface and the world's LevelDB unlock need a licensed Foundry and
+# live in e2e/, which runs locally and is deliberately not in CI. A green here is
+# not a working game server.
 
 on:
   push:
@@ -91,6 +98,48 @@ jobs:
           node-version-file: .nvmrc
       - run: npm run test:module-version
 
+  # The Dockerfile is a pure passthrough — FROM + four LABELs — and its load-bearing
+  # rule ("DO NOT add an ENTRYPOINT") was enforced by a COMMENT. Same shape as the two
+  # guards above, one layer down: this one builds the image.
+  #
+  # It proves three things nothing else does: the Dockerfile SOURCE added no forbidden
+  # instruction, the built image is still an additive superset of the pinned base
+  # (base layers an unmodified prefix, every Config field equal by union sweep,
+  # felddy's 13 /home/node scripts byte-identical), and the values cfg-core-server
+  # depends on are intact (uid 1000:1000, WORKDIR, non-empty CMD, HEALTHCHECK, PID 1,
+  # prompt SIGTERM). It is the guard on the daily upstream-watch bump PR, which
+  # rewrites the FROM digest by sed — until now nothing looked at what came back.
+  #
+  # NO LICENSE, NO SECRET, NO npm ci, NO GHCR LOGIN — the scripts use only node
+  # built-ins, and the one network dependency is an anonymous Docker Hub pull of the
+  # pinned base (~115 MB), retried 3x inside the check.
+  #
+  # Deliberately NO `if:` — a job-level condition that evaluates false reports
+  # `skipped`, which ci-gate's fail-closed allowlist PASSES. If this cannot run, it
+  # must FAIL, never skip.
+  #
+  # ⚠️ ACCEPTED RISK, STATED PLAINLY: this joins ci-gate, the repo's ONLY required
+  # context, so a Docker Hub outage or rate limit blocks every merge including
+  # docs-only PRs. That is the correct trade under this repo's doctrine — a flaky red
+  # beats a lying green — and the retry covers the transient case. The mitigation NOT
+  # taken is a Docker Hub token: that is an owner action and would add a 401 failure
+  # mode to a check that currently needs no credential.
+  image-contract:
+    name: felddy image contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+      # Offline half first: mutation suite over fixtures, no Docker, ~0.1s. If the
+      # decision functions are wrong, nothing below is worth running.
+      - run: npm run test:image-contract
+      # Live half: parses the FROM digest, pulls, builds, inspects, runs probe
+      # containers. Docker is preinstalled on ubuntu-latest.
+      - run: npm run check:image-contract
+
   # ── THE ONLY REQUIRED CONTEXT ─────────────────────────────────────────────
   # Branch protection requires `ci-gate` and nothing else, so renaming or
   # splitting a job needs no branch-protection change.
@@ -107,7 +156,7 @@ jobs:
   ci-gate:
     name: CI Gate
     if: always()
-    needs: [unit, agent-pin, module-version]
+    needs: [unit, agent-pin, module-version, image-contract]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

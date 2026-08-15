@@ -1,0 +1,12 @@
+# The Dockerfile has no COPY/ADD, so the build needs NOTHING from this repo — but
+# without this file `docker build .` still ships the whole tree to the daemon on
+# EVERY run: 424 MB locally, most of it e2e/.e2e-cache (the 147 MB Foundry zip and
+# a seeded data dir) plus two node_modules trees.
+#
+# On a CI runner the checkout is small, so the missing ignore file cost only
+# humans — the worst polarity for a thing nobody notices.
+#
+# ⚠️ WHEN A CAPABILITY ADDS A `COPY`, un-ignore exactly the path it copies:
+#     !cfg/service-gm-bootstrap.sh
+# Otherwise the build fails with a file-not-found that reads as a Dockerfile bug.
+*

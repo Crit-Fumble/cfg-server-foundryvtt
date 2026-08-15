@@ -14,6 +14,8 @@
     "test": "npm --prefix module test",
     "test:agent": "node --test agent/check-playwright-pin.test.mjs",
     "test:module-version": "node --test module/check-version-bump.test.mjs",
+    "test:image-contract": "node --test check-felddy-contract.test.mjs",
+    "check:image-contract": "node check-felddy-contract.mjs",
     "module:zip": "node module/scripts/build-zip.js",
     "prepare": "husky"
   },

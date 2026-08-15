@@ -43,7 +43,7 @@ npm run test:foundry:up && npm run test:foundry   # integration (licensed Foundr
 This image is a **superset of `felddy/foundryvtt`, pinned to a digest** — never a
 fork or a from-scratch rebuild. felddy keeps owning the hard, fragile parts (the
 licensed binary download/cache, license host-binding, `Config/admin.txt`, the
-`/auth /join /setup` surface, the `/data` layout, `uid 1000:1001`). We only *add*,
+`/auth /join /setup` surface, the `/data` layout, `uid 1000:1000`). We only *add*,
 and every addition is gated behind a **default-OFF** env flag, so the image stays
 provably byte-identical to felddy until a capability is turned on. That makes the
 `cfg-core-server` image swap (`foundryImage`) a one-config, instantly-reversible
@@ -62,8 +62,26 @@ change with felddy as the documented rollback.
 
 - [x] **Passthrough** — `FROM felddy@<digest>`, zero additions. Provably identical
       to felddy; proves the image swap before anything is added.
-- [ ] Build + CI-assert the felddy hard-contract is byte-identical (uid, `/data`
-      layout, `admin.txt`, license host-binding, route-prefixed surface, SIGTERM).
+- [x] **CI-assert the felddy passthrough + hard contract** — `check-felddy-contract.mjs`,
+      required via CI Gate, with **no license and no secrets**. Three families, none
+      redundant: the Dockerfile SOURCE stayed additive (the "DO NOT add an ENTRYPOINT"
+      rule is now *executable* — a comment is not a guard); the IMAGE is an additive
+      superset of the pinned base (base layers an unmodified prefix, every `Config`
+      field compared by union sweep so a field nobody enumerated is still checked,
+      felddy's 13 `/home/node` scripts byte-identical); and the values cfg-core-server
+      depends on are intact (uid 1000:1000, WORKDIR, non-empty CMD carrying
+      `--dataPath=/data`, a present HEALTHCHECK, `FOUNDRY_VERSION` agreeing with this
+      Dockerfile's own header, core-server's verbatim entrypoint override, PID 1 =
+      felddy's bash supervisor, and a prompt SIGTERM rather than a force-kill).
+      ⚠️ It proves ONE platform per run (the pinned base is a 4-platform list).
+- [ ] **Boot tier — needs a booted, mostly licensed Foundry. OWNER CALL: the Foundry
+      zip on a runner is an EULA question, and activations are a limited resource.**
+      Still asserted NOWHERE in CI: `admin.txt` being hashed *and* accepted by `/auth`,
+      the `FOUNDRY_*` → `Config/options.json` mapping, `check_health.sh`'s route-prefixed
+      request, the license host-binding (`signature`), the `/data` runtime tree, and the
+      world's LevelDB actually unlocking on shutdown. These need `e2e/`, which is
+      deliberately not in CI. ⚠️ Note `e2e/` does **not** cover the route prefix either —
+      `compose.yml` sets no `FOUNDRY_ROUTE_PREFIX` and the specs hard-code `''`.
 - [ ] Swap `cfg-core-server` `foundryImage` in dev → prod (still pure passthrough).
 - [ ] Co-located service-GM agent, gated by `SERVICE_GM_ENABLED` (default off).
 - [x] **Module source in-repo** (`module/`) + release-asset delivery channel.
