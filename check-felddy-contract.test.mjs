@@ -19,6 +19,7 @@ import {
   HARD_CONTRACT,
   checkDockerfile,
   checkHardContract,
+  checkHarnessBase,
   checkPassthrough,
   parseDockerfile,
   parseLabelLine,
@@ -354,4 +355,43 @@ test('H_ENTRYPOINT and H_WORKDIR catch a relative-path break', () => {
   const swapped = wrapperImage()
   swapped.Config.Entrypoint = ['/usr/local/bin/other.sh']
   fires(hc(swapped), 'H_ENTRYPOINT')
+})
+
+// ── FAMILY C, second file — the module integration harness's base ───────────
+
+const DIGEST = `sha256:${'b'.repeat(64)}`
+const GOOD_COMPOSE = `services:
+  foundry:
+    image: felddy/foundryvtt@${DIGEST}
+    platform: linux/amd64
+    environment:
+      FOUNDRY_VERSION: \${FOUNDRY_VERSION:-14.361}
+`
+
+test('C7 is silent when the harness pins exactly what the Dockerfile ships', () => {
+  assert.deepEqual(checkHarnessBase(GOOD_DOCKERFILE, GOOD_COMPOSE), [])
+})
+
+test('C7 catches the ROLLING tag the harness used to use', () => {
+  const rolling = GOOD_COMPOSE.replace(`felddy/foundryvtt@${DIGEST}`, 'felddy/foundryvtt:14')
+  fires(checkHarnessBase(GOOD_DOCKERFILE, rolling), 'C7')
+})
+
+test('C7 catches the two pins drifting apart — the whole point of pinning', () => {
+  const drifted = GOOD_COMPOSE.replace(DIGEST, `sha256:${'c'.repeat(64)}`)
+  fires(checkHarnessBase(GOOD_DOCKERFILE, drifted), 'C7')
+})
+
+test('C7 fails loudly rather than silently passing if the harness stops naming felddy', () => {
+  const moved = GOOD_COMPOSE.replace(`felddy/foundryvtt@${DIGEST}`, 'someoneelse/foundry:1')
+  fires(checkHarnessBase(GOOD_DOCKERFILE, moved), 'C7')
+})
+
+test('C7 does NOT police FOUNDRY_VERSION — the app version is per-install state', () => {
+  const otherVersion = GOOD_COMPOSE.replace('14.361', '14.999')
+  assert.deepEqual(
+    checkHarnessBase(GOOD_DOCKERFILE, otherVersion),
+    [],
+    'pinning the app version to the image is the ARG FOUNDRY_VERSION anti-pattern the Dockerfile forbids',
+  )
 })

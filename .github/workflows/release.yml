@@ -69,6 +69,25 @@ jobs:
             type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
             type=raw,value=${{ inputs.tag }},enable=${{ github.event_name == 'workflow_dispatch' }}
             type=sha,prefix=sha-,format=short
+          # ⛔ THESE TWO ARE CORRECTIONS, NOT DECORATION. A CLI `--label` OVERRIDES the
+          # Dockerfile's LABEL, and metadata-action generates its own
+          # org.opencontainers.image.* set from GitHub repo metadata. Measured against
+          # the PUBLISHED ghcr :latest on 2026-08-15, that silently replaced two of the
+          # four labels the Dockerfile declares:
+          #
+          #   licenses    AGPL-3.0-only  ->  NOASSERTION       ⛔ wrong, and it is a
+          #                                                       LICENSE claim on a
+          #                                                       published artifact
+          #   description the Dockerfile's -> the GitHub repo blurb
+          #
+          # So the image users pull disagreed with the image CI verifies, in exactly
+          # the dimension check-felddy-contract.mjs asserts (P4). Re-stating them here
+          # puts the Dockerfile back in charge of its own identity while KEEPING
+          # metadata-action's genuinely useful additions (created, revision, version) —
+          # which is why this is an override list and not a `labels:` deletion.
+          labels: |
+            org.opencontainers.image.licenses=AGPL-3.0-only
+            org.opencontainers.image.description=CFG server-side wrapper for FoundryVTT hosting — additive felddy superset
 
       - name: Build and push
         uses: docker/build-push-action@v5

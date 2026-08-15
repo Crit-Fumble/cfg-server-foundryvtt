@@ -19,7 +19,15 @@
 
 services:
   foundry:
-    image: felddy/foundryvtt:14
+    # ⛔ THE SAME DIGEST THE WRAPPER'S Dockerfile PINS — not the rolling `:14`.
+    # This harness proved the module against whatever felddy `:14` happened to be
+    # that day, while the image we actually ship pinned a digest. felddy rolls that
+    # tag (14.361 -> 14.364 stranded installs once already), so the two could drift
+    # apart silently and the integration suite would be green against a base nobody
+    # ships. Pinning was a provable no-op the day it was made — `:14` resolved to
+    # exactly this digest — and check-felddy-contract.mjs now FAILS if this line and
+    # the Dockerfile's FROM ever disagree, so bumping one without the other is loud.
+    image: felddy/foundryvtt@sha256:bb8402d7098d0dcc136bf47c8932c0a1de5e405e021ca1710691cdd0ebdff730
     platform: linux/amd64
     init: true
     # Run as root in the TEST container so Foundry can traverse the root-owned

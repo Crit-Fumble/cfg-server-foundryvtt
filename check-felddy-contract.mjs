@@ -71,7 +71,7 @@
  * lives in main(). That split is what lets the .test.mjs mutate facts offline.
  */
 import { execFileSync } from 'node:child_process'
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -278,6 +278,50 @@ export function checkDockerfile(text, additions = ADDITIONS) {
     }
   }
 
+  return problems
+}
+
+/**
+ * FAMILY C, second file — the module's integration harness must run the SAME base
+ * the wrapper ships.
+ *
+ * `module/tests/docker-compose.yml` used the rolling `felddy/foundryvtt:14` while
+ * the Dockerfile pinned a digest. Both resolved identically the day this was
+ * written, which is exactly why it was safe to pin and exactly why the drift would
+ * have been invisible: felddy rolls `:14` (14.361 -> 14.364 stranded installs
+ * once), so the licensed integration suite could go green against a base the
+ * platform does not ship, and nothing would say so.
+ *
+ * Compares digests only. The harness's FOUNDRY_VERSION is deliberately NOT checked
+ * — the Foundry APP version is per-install platform state resolved at launch, and
+ * pinning it to the image would be the `ARG FOUNDRY_VERSION` anti-pattern the
+ * Dockerfile forbids.
+ */
+export function checkHarnessBase(dockerfileText, composeText) {
+  const problems = []
+  const fromDigest = (dockerfileText.match(/^FROM\s+felddy\/foundryvtt@(sha256:[0-9a-f]{64})/im) || [])[1]
+  const composeRef = (composeText.match(/^\s*image:\s*(felddy\/foundryvtt\S*)/im) || [])[1]
+
+  if (!composeRef) {
+    problems.push(
+      'C7 module/tests/docker-compose.yml no longer names a felddy/foundryvtt image — ' +
+        'if the harness moved to another base, update this check rather than deleting it',
+    )
+    return problems
+  }
+  const composeDigest = (composeRef.match(/@(sha256:[0-9a-f]{64})$/) || [])[1]
+  if (!composeDigest) {
+    problems.push(
+      `C7 module/tests/docker-compose.yml uses ${composeRef} — a FLOATING tag. felddy rolls ` +
+        '`:14`, so the licensed integration suite would silently test a base this repo does ' +
+        'not ship. Pin it to the Dockerfile\'s digest.',
+    )
+  } else if (fromDigest && composeDigest !== fromDigest) {
+    problems.push(
+      `C7 the integration harness pins ${composeDigest.slice(0, 19)}… but the Dockerfile ships ` +
+        `${fromDigest.slice(0, 19)}… — bump both together, or the suite proves the wrong base`,
+    )
+  }
   return problems
 }
 
@@ -579,7 +623,21 @@ function main() {
   const dockerfileText = readFileSync(join(REPO_ROOT, 'Dockerfile'), 'utf8')
 
   // ── FAMILY C first: no Docker, no pull. A forbidden instruction fails in <1s.
-  const cProblems = checkDockerfile(dockerfileText)
+  // ⛔ A MISSING HARNESS IS A FAILURE, NOT A SKIP. Reading this with an
+  // `existsSync ? … : ''` fallback meant deleting or moving the file silently
+  // switched C7 off and the check still printed green — the same
+  // empty-output-parses-as-clean shape H_PROBE exists to prevent. If the harness
+  // genuinely moves, this check gets updated; it does not get to quietly lapse.
+  const composePath = join(REPO_ROOT, 'module', 'tests', 'docker-compose.yml')
+  const cProblems = [...checkDockerfile(dockerfileText)]
+  if (existsSync(composePath)) {
+    cProblems.push(...checkHarnessBase(dockerfileText, readFileSync(composePath, 'utf8')))
+  } else {
+    cProblems.push(
+      `C7 ${composePath} is missing — the module integration harness is what C7 pins to the ` +
+        'shipped base. If it moved, point this check at the new path rather than losing the guard.',
+    )
+  }
 
   // ⛔ STOP HERE IF THE SOURCE IS ALREADY INVALID. Family C needs no Docker, so a
   // forbidden instruction fails in <1s with no pull and no build. This is also a
