@@ -1,5 +1,6 @@
 /**
- * Mutation tests for check-felddy-contract's pure decision functions.
+ * Mutation tests for felddy-contract-rules — the pure decisions behind
+ * check-felddy-contract.
  *
  * ⛔ THE POINT OF THIS FILE IS THAT THE CHECK CAN GO RED. A guard that only ever
  * sees a healthy image proves nothing — this repo has shipped two checks that
@@ -23,7 +24,7 @@ import {
   checkPassthrough,
   parseDockerfile,
   parseLabelLine,
-} from './check-felddy-contract.mjs'
+} from './felddy-contract-rules.mjs'
 
 // ── fixtures ────────────────────────────────────────────────────────────────
 

@@ -1,208 +1,80 @@
-# CFG Core Module - Integration Tests
+# CFG Server Manager module — tests
 
-Playwright-based integration tests for the CFG Core module's Image Editor functionality.
+Two suites live here, and they have nothing in common except the directory:
 
-## Prerequisites
+| suite | what it is | needs a licensed Foundry? |
+|---|---|---|
+| `unit/` | jest, pure decision logic | no — this is what CI Gate runs |
+| `integration/` | Playwright against a REAL Foundry in Docker | **yes** |
 
-1. **Foundry VTT Running**: The tests expect Foundry VTT to be running on `http://localhost:30000`
-   - Docker: `docker run -d -p 30000:30000 your-foundry-image`
-   - Or: `node main.js --port=30000 --dataPath=./vtt_data`
+> ⚠️ **This file described a suite that did not exist.** Until 2026-08-15 it
+> documented an "Image Editor" spec, `npm run test:connection`,
+> `npm run test:image-editor` and an `npm install` inside `tests/` — none of
+> which exist here. It arrived wholesale with the module absorption (`6c62a1f`)
+> from `cfg-foundry-plugin` and was never reconciled. If a command below stops
+> matching `module/package.json`, fix the doc rather than adding the script.
 
-2. **World Launched**: A world must be created and actively running
-   - Go to http://localhost:30000
-   - Launch your world
-   - Make sure you can access the game
-
-3. **Module Installed**: The `crit-fumble-core` module must be installed and enabled
-   - In Foundry, go to Add-on Modules
-   - Enable "Crit-Fumble Core"
-   - Return to the world
-
-4. **Logged in as GM**: You must be logged in as a Gamemaster
-   - The tests use your existing session
-   - Make sure you're logged in as GM before running tests
-
-5. **Active Scene**: At least one scene should be created
-   - Go to Scenes tab
-   - Create a scene (can be blank)
-
-## Quick Start
+## Unit suite
 
 ```bash
-# 1. Make sure Foundry VTT is running on port 30000 with Docker
-# Your world should be launched and you should be logged in as GM
-
-# 2. Install test dependencies
-cd tests
-npm install
-npx playwright install chromium
-
-# 3. Run connection tests first to verify setup
-npm run test:connection
-
-# 4. If connection tests pass, run all Image Editor tests
-npm run test:image-editor
+cd module
+env "npm_config_//npm.pkg.github.com/:_authToken=$(gh auth token)" npm ci
+npm test              # jest — also run by the repo-root husky hooks and CI Gate
 ```
 
-## Running Tests
+## Integration suite
 
-### Run all tests:
+Drives the 19 specs in `integration/specs/` — the pull-sync families (actor,
+item, journal, folder, macro, scene, playlist, cards, rolltable), the JSON
+editor, API-key auth, the module contract, system-schema push/descriptor, quest
+sync and world/campaign links.
+
+**One-time setup.** Copy `.env.test.example` to `.env.test` and fill it in.
+⛔ Two of its keys are **host paths with no defaults** — `FOUNDRY_CACHE_DIR` and
+`FOUNDRY_SYSTEMS_DIR`. Miss them and compose fails with a bare "variable is not
+set" that names neither this file nor what it wanted. The example explains what
+each should point at.
 
 ```bash
-npm test
+cd module
+npm run test:foundry:all     # up → test → down, the usual entry point
 ```
 
-### Run tests with UI (recommended for development):
+Or step through it:
 
 ```bash
-npm run test:ui
+npm run test:foundry:up      # stage the runtime world, start compose, run foundry-setup
+npm run test:foundry         # playwright
+npm run test:foundry:ui      # playwright --ui, for development
+npm run test:foundry:down    # tear down AND delete fixtures/.worlds-runtime
 ```
 
-### Run tests in headed mode (see browser):
+**The world you test against is a disposable copy.** `test:foundry:stage` copies
+`fixtures/worlds/` to `fixtures/.worlds-runtime/`, which is what gets mounted —
+Foundry mutates it freely and the tracked template stays clean. `down` deletes
+it, so a re-run starts from the template again.
 
-```bash
-npm run test:headed
-```
+## Two pins that are deliberate, not drift
 
-### Run only Image Editor tests:
+- **The base image** is the same digest `../../Dockerfile` pins, not the rolling
+  `felddy/foundryvtt:14`. felddy rolls that tag (14.361 → 14.364 stranded
+  installs once), so a floating base could make this suite green against
+  something the platform does not ship. `check-felddy-contract.mjs` (C7) fails
+  if the two ever disagree.
+- **`FOUNDRY_VERSION` is 14.361**, which is *older* than the base image's own
+  default. That is on purpose: 14.361 is what `module.json` declares
+  `compatibility.verified`, what the fixture world pins as `coreVersion` and
+  `minimum`, and what a dozen "MEASURED live (v14.361)" comments in
+  `module/scripts/` record Foundry's document semantics at. Bumping it is a
+  **compatibility bump** — re-run those probes, update the comments that
+  disagree, and move `module.json` — not a version tidy-up.
 
-```bash
-npm run test:image-editor
-```
+## When something breaks
 
-### Debug a specific test:
+`TROUBLESHOOTING.md` is next to this file. The two failures worth naming here
+because they look like bugs and are not:
 
-```bash
-npm run test:debug
-```
-
-### View test report:
-
-```bash
-npm run report
-```
-
-## Test Coverage
-
-### Image Editor Tests (`e2e/image-editor.spec.js`)
-
-#### Basic Functionality
-
-- ✅ Opens Image Editor from Scenes directory
-- ✅ All drawing tools are available
-- ✅ Switches between drawing tools
-- ✅ Opens at full screen by default
-- ✅ Has transparent background by default
-
-#### Drawing Tools
-
-- ✅ Brush tool draws pixels
-- ✅ Eraser tool erases pixels
-- ✅ Line tool draws lines
-- ✅ Rectangle tool draws rectangles
-- ✅ Circle tool draws circles
-
-#### Controls
-
-- ✅ Changes brush color
-- ✅ Changes brush size
-- ✅ Toggles grid visibility
-- ✅ Changes scale and updates grid
-
-#### Keyboard Shortcuts
-
-- ✅ `B` - Brush
-- ✅ `E` - Eraser
-- ✅ `L` - Line
-- ✅ `R` - Rectangle
-- ✅ `C` - Circle
-- ✅ `Ctrl+Z` - Undo
-- ✅ `Ctrl+Shift+Z` - Redo
-
-#### Save/Export
-
-- ✅ Exports image as PNG download
-
-## Known Issues to Test
-
-Based on your feedback that "several tools do not work correctly", the tests will help identify:
-
-1. **Drawing Tool Issues**: Tests verify each tool actually modifies the canvas
-2. **Shape Tool Issues**: Tests verify shapes are created on canvas
-3. **Undo/Redo Issues**: Tests verify history management works
-4. **Grid Overlay Issues**: Tests verify grid can be toggled
-5. **Keyboard Shortcut Issues**: Tests verify all shortcuts work
-
-## Test Output
-
-Tests will generate:
-
-- Screenshots on failure
-- Videos on failure
-- HTML report with detailed results
-- Trace files for debugging
-
-## Debugging Failed Tests
-
-1. **Run with UI**: `npm run test:ui` - Interactive mode with time-travel debugging
-2. **Run headed**: `npm run test:headed` - See the browser as tests run
-3. **Debug mode**: `npm run test:debug` - Step through tests line by line
-4. **Check screenshots**: Failed tests save screenshots in `test-results/`
-5. **View trace**: Open trace files in Playwright Trace Viewer
-
-## CI/CD Integration
-
-These tests can be integrated into CI/CD pipelines:
-
-```yaml
-# Example GitHub Actions workflow
-- name: Run Foundry VTT
-  run: docker run -d -p 30000:30000 foundry-vtt
-
-- name: Install test dependencies
-  run: |
-    cd tests
-    npm ci
-    npx playwright install --with-deps chromium
-
-- name: Run integration tests
-  run: cd tests && npm test
-
-- name: Upload test results
-  if: always()
-  uses: actions/upload-artifact@v3
-  with:
-    name: playwright-report
-    path: tests/playwright-report/
-```
-
-## Contributing
-
-When adding new features to the Image Editor:
-
-1. Add corresponding tests to `e2e/image-editor.spec.js`
-2. Run tests locally before committing
-3. Ensure all tests pass in CI
-
-## Troubleshooting
-
-### "Tests must be run as GM"
-
-- Log in to Foundry VTT as a Gamemaster before running tests
-
-### "Timeout waiting for selector"
-
-- Ensure Foundry VTT is running on port 30000
-- Check that the crit-fumble-core module is enabled
-- Verify you have an active scene
-
-### "Cannot find ImageEditor"
-
-- The Image Editor class must be globally accessible
-- Check browser console for module loading errors
-
-### Tests failing randomly
-
-- Increase timeout values in `playwright.config.js`
-- Run tests with `--headed` flag to observe behavior
-- Check for race conditions in drawing operations
+- **compose exits immediately, "variable is not set"** — `.env.test` is missing
+  one of the two host paths above.
+- **felddy bails on its README scan (EACCES)** — a mounted parent ended up
+  root-owned. Mount the *whole* systems dir, never a subdir.
