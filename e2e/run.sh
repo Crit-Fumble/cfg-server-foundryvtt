@@ -118,6 +118,33 @@ cp -R "$PLUGIN_SRC/module.json" "$PLUGIN_SRC/scripts" "$PLUGIN_SRC/styles" "$PLU
 # distinguishes the shipped module from the retiring plugin.
 echo "  installed $(node -p "require('$MOD/module.json').title + ' ' + require('$MOD/module.json').version")"
 
+# ── Licensed / extra modules ─────────────────────────────────────────────────
+# Seed every OTHER module the source install carries (premium 5e content and
+# its utility dependencies) so the suite can exercise real licensed data
+# models and sheets. Per-module and one-time: a module already present in
+# .e2e-data is left alone, so a re-run never clobbers state.
+#
+# ⛔ LICENSED CONTENT NEVER ENTERS THIS REPO. The source install and .e2e-data
+# are both gitignored; this copy is local plumbing for content the fixture
+# license already owns. To add content: put the module into the source
+# install's Data/modules/ (e.g. rsync from a licensed instance you own), then
+# list the ids in E2E_LICENSED_MODULES (e2e/.env) — licensed-modules.spec.ts
+# fails on any listed id that did not land, and SKIPS (loudly, as UNVERIFIED)
+# when the variable is unset, so machines without the content stay honest.
+if [ -n "${WORLD_SRC:-}" ] && [ -d "$WORLD_SRC/Data/modules" ]; then
+  SEEDED_MODS=""
+  for _mod in "$WORLD_SRC"/Data/modules/*/; do
+    [ -d "$_mod" ] || continue
+    _id="$(basename "$_mod")"
+    [ "$_id" = "crit-fumble-core" ] && continue # always re-seeded from module/ above
+    if [ ! -d "$HERE/.e2e-data/Data/modules/$_id" ]; then
+      cp -R "$_mod" "$HERE/.e2e-data/Data/modules/$_id"
+      SEEDED_MODS="$SEEDED_MODS $_id"
+    fi
+  done
+  [ -n "$SEEDED_MODS" ] && echo "→ seeded extra modules from source install:$SEEDED_MODS"
+fi
+
 # Pin the Foundry version to whatever release the cache actually holds, so felddy
 # installs from cache instead of trying to fetch the build it defaults to.
 ZIP="$(ls "$HERE/.e2e-cache"/foundryvtt-*.zip 2>/dev/null | head -1 || true)"
