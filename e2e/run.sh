@@ -8,9 +8,39 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 REPO="$(cd "$HERE/.." && pwd)"
 PORT="${E2E_FOUNDRY_PORT:-30001}"
 COMPOSE="docker compose -f $HERE/compose.yml"
+# ── Where the seed fixtures come from ───────────────────────────────────────
+# ⛔ THE PROVISIONED INSTALL MOVES BETWEEN STORAGE ROOTS, so resolve across the
+# known ones and SAY which won — never hardcode a single root again.
+#
+# Both defaults here pointed at `cfg_user_storage`, the DEV stack's root
+# (docker-compose.dev.yml). That stack's storage is now EMPTY — 0 users — while
+# the same install (same user id, same installation id, and crucially the same
+# SIGNED, host-bound license.json) sits under `e2e_cfg_user_storage`. The old
+# default resolved to a path that no longer exists, so the suite could not run
+# at all.
+#
+# Unrunnable is the mild failure. Resolving QUIETLY to the wrong place is the
+# bad one — see the plugin-source note further down, where a default that
+# silently resolved to a sibling checkout left every rung of this suite green
+# against a module this repo does not publish. Hence: echo the winner, and fail
+# listing every candidate tried.
+STATE_DIR="${CFG_DEV_STATE:-$REPO/../../.dev-state}"
+# Newest-known root first.
+STORAGE_ROOTS="${FOUNDRY_STORAGE_ROOTS:-$STATE_DIR/e2e_cfg_user_storage $STATE_DIR/cfg_user_storage}"
+INSTALL_REL="users/d637ce7b-fdad-454c-bfcd-041a5a9c3dec/installations/cmpj7j1on0000lhlpas58x149/data"
+
 # Source Foundry release cache to seed an isolated writable copy from (so the dev
 # cache is never mutated). Override via FOUNDRY_CACHE_DIR in e2e/.env.
-DEV_CACHE="${FOUNDRY_CACHE_DIR:-$REPO/../../.dev-state/cfg_user_storage/platform/foundry/cache}"
+DEV_CACHE="${FOUNDRY_CACHE_DIR:-}"
+if [ -z "$DEV_CACHE" ]; then
+  for _root in $STORAGE_ROOTS; do
+    if ls "$_root/platform/foundry/cache"/foundryvtt-*.zip >/dev/null 2>&1; then
+      DEV_CACHE="$_root/platform/foundry/cache"
+      echo "→ Foundry cache source: $DEV_CACHE"
+      break
+    fi
+  done
+fi
 
 if [ ! -f "$HERE/.env" ]; then
   echo "✗ $HERE/.env missing — copy e2e/.env.example and set FOUNDRY_LICENSE_KEY" >&2
@@ -35,7 +65,16 @@ fi
 # the admin API. The license is the dev install's signed, host-bound one; the
 # container hostname (compose) matches its host so Foundry accepts it without a
 # fresh activation (which would hit Foundry's per-license activation limit).
-WORLD_SRC="${FOUNDRY_WORLD_SRC:-$REPO/../../.dev-state/cfg_user_storage/users/d637ce7b-fdad-454c-bfcd-041a5a9c3dec/installations/cmpj7j1on0000lhlpas58x149/data}"
+WORLD_SRC="${FOUNDRY_WORLD_SRC:-}"
+if [ -z "$WORLD_SRC" ]; then
+  for _root in $STORAGE_ROOTS; do
+    if [ -d "$_root/$INSTALL_REL/Data/worlds/test-world" ]; then
+      WORLD_SRC="$_root/$INSTALL_REL"
+      echo "→ world/license source: $WORLD_SRC"
+      break
+    fi
+  done
+fi
 if [ ! -d "$HERE/.e2e-data/Data/worlds/test-world" ]; then
   if [ -d "$WORLD_SRC/Data/worlds/test-world" ]; then
     echo "→ seeding test-world + dnd5e + crit-fumble-core plugin + signed license from $WORLD_SRC (one-time)"
@@ -44,7 +83,9 @@ if [ ! -d "$HERE/.e2e-data/Data/worlds/test-world" ]; then
     cp -R "$WORLD_SRC/Data/systems/dnd5e" "$HERE/.e2e-data/Data/systems/"
     [ -f "$WORLD_SRC/Config/license.json" ] && cp "$WORLD_SRC/Config/license.json" "$HERE/.e2e-data/Config/license.json"
   else
-    echo "✗ no world source at $WORLD_SRC/Data — set FOUNDRY_WORLD_SRC to a provisioned Foundry data dir" >&2
+    echo "✗ no world source found — set FOUNDRY_WORLD_SRC to a provisioned Foundry data dir." >&2
+    echo "  Needs <src>/Data/worlds/test-world; tried (in order):" >&2
+    for _root in $STORAGE_ROOTS; do echo "    $_root/$INSTALL_REL" >&2; done
     exit 1
   fi
 fi
@@ -90,6 +131,24 @@ trap cleanup EXIT
 
 echo "→ building wrapper image (cfg-server-foundryvtt:local)"
 (cd "$REPO" && DOCKER_BUILDKIT=1 docker build -q -t cfg-server-foundryvtt:local . >/dev/null)
+
+# ⛔ CLEAR A STALE FOUNDRY DATA-DIR LOCK BEFORE BOOTING.
+# Foundry guards /data with a proper-lockfile-style lock DIRECTORY
+# (Config/options.json.lock) and refuses to start while it looks live:
+#   "Foundry VTT cannot start in this directory which is already locked by
+#    another process"
+# felddy answers that with "Failure 1 detected (exit code 1). Exiting
+# immediately" — no retry — so the container never serves and the whole run dies
+# in the wait loop below, before a single spec executes.
+#
+# A shutdown that does not finish in time leaves that lock behind with a fresh
+# mtime, and the next boot lands inside the staleness window. Measured
+# 2026-08-15 this alternated exactly: a passing run left the lock, the next run
+# failed to boot, its ~4min timeout aged the lock past stale, the run after
+# passed. Clearing it here is safe by construction — `down` first, so no
+# container can still hold /data.
+$COMPOSE down >/dev/null 2>&1 || true
+rm -rf "$HERE/.e2e-data/Config/options.json.lock"
 
 echo "→ starting Foundry"
 $COMPOSE up -d

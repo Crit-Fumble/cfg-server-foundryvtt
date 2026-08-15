@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test'
 import http from 'node:http'
 import { execSync } from 'node:child_process'
+import { rmSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { launchWorld, waitForWorldActive } from '../helpers/foundry-admin'
@@ -34,6 +35,13 @@ import { SERVICE_GM } from '../helpers/service-gm'
  */
 
 const CONTAINER = process.env.E2E_FOUNDRY_CONTAINER ?? 'cfg-server-foundryvtt-e2e'
+/**
+ * Foundry's data-dir lock (proper-lockfile style: a DIRECTORY, not a file), on
+ * the host side of the /data bind mount. See restartFoundry for why the harness
+ * clears it.
+ */
+const LOCK_DIR =
+  process.env.E2E_FOUNDRY_LOCK ?? resolve(process.cwd(), 'e2e/.e2e-data/Config/options.json.lock')
 const WORLD = process.env.FOUNDRY_WORLD ?? 'test-world'
 const PORT = process.env.E2E_FOUNDRY_PORT ?? '30001'
 const BASE = `http://localhost:${PORT}`
@@ -56,6 +64,36 @@ function dockerStartedAt(container: string): string {
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
+
+/**
+ * Restart the Foundry PROCESS deterministically.
+ *
+ * ⛔ DO NOT go back to `docker restart`. It brings the new process up ~1s after
+ * SIGTERM, which lands INSIDE proper-lockfile's staleness window: Foundry's
+ * `acquireLockFile` finds a lock whose mtime is a couple of seconds old, judges
+ * it live, and dies with
+ *
+ *   "Foundry VTT cannot start in this directory which is already locked by
+ *    another process"
+ *
+ * and felddy's entrypoint answers "Failure 1 detected (exit code 1). Exiting
+ * immediately" — it does NOT retry. The container then stays DOWN for the rest
+ * of the run, so this spec times out and every later spec gets ECONNREFUSED.
+ *
+ * It is a RACE, which is why it only bit ~60% of runs: when Foundry finishes its
+ * shutdown first it removes the lock itself ("Shut-down success. Goodbye!") and
+ * the next boot is clean. Measured 2026-08-15: 3 of 5 full-suite runs failed
+ * this way, while the spec passed every time it ran alone.
+ *
+ * `docker stop` returns only once the container has actually stopped, so nothing
+ * can still hold the lock; clearing it then is safe by construction, and is what
+ * proper-lockfile would itself do once the entry aged past stale.
+ */
+function restartFoundry(): void {
+  execSync(`docker stop ${CONTAINER}`, { stdio: 'ignore' })
+  rmSync(LOCK_DIR, { recursive: true, force: true })
+  execSync(`docker start ${CONTAINER}`, { stdio: 'ignore' })
+}
 
 /** After a restart, wait for Foundry's HTTP to answer, then relaunch + await the world. */
 async function reactivateWorld(): Promise<void> {
@@ -136,7 +174,7 @@ test('v1.26.0: a Foundry restart invalidates the cached player cookie; getPlayer
 
   // ── Restart the Foundry process (new StartedAt) + re-activate the world ──
   console.log('[proof] restarting Foundry container…')
-  execSync(`docker restart ${CONTAINER}`, { stdio: 'ignore' })
+  restartFoundry()
   await reactivateWorld()
 
   const epoch2 = dockerStartedAt(CONTAINER)
