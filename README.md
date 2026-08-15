@@ -68,7 +68,12 @@ change with felddy as the documented rollback.
 - [ ] Co-located service-GM agent, gated by `SERVICE_GM_ENABLED` (default off).
 - [x] **Module source in-repo** (`module/`) + release-asset delivery channel.
 - [ ] Flip `foundryPluginManifestUrl` to this repo's release assets (owner/config).
-- [ ] Bake the `crit-fumble-core` plugin into the image (collapse `syncCfgPlugin`, #1).
+- ~~Bake the `crit-fumble-core` plugin into the image (collapse `syncCfgPlugin`)~~ —
+      **rejected, [#1](https://github.com/Crit-Fumble/cfg-server-foundryvtt/issues/1)
+      closed 2026-08-15.** `VOLUME /data` shadows anything baked to
+      `Data/modules/`, and a bake needs a runtime copy step that this image's
+      no-`ENTRYPOINT` rule leaves nowhere to live. Writing from the host before
+      the container starts is strictly better; see the Dockerfile header.
 
 Tracked under the [FoundryVTT Hosting epic](https://github.com/Crit-Fumble/cfg-core-server/issues/71).
 

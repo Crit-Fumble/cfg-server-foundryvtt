@@ -34,8 +34,21 @@
 #
 # Future additive capabilities land behind default-OFF env flags, each on its own
 # prove-passthrough cycle: a CO-LOCATED headless service-GM provisioning agent
-# (SERVICE_GM_ENABLED, talking to localhost:30000), and the baked crit-fumble-core
-# plugin (collapsing the launch-time syncCfgPlugin copy). NONE are present yet.
+# (SERVICE_GM_ENABLED, talking to localhost:30000). NOT present yet.
+#
+# ⛔ BAKING THE crit-fumble-core PLUGIN IN WAS INVESTIGATED AND REJECTED (#1,
+# closed 2026-08-15). It is NOT a pending capability — it cannot work here, and
+# both reasons are already visible in this file:
+#   1. felddy declares VOLUME /data, and the plugin lives at
+#      <vttDataPath>/Data/modules/crit-fumble-core. Anything COPY'd there is
+#      SHADOWED the moment the bind mount lands.
+#   2. A bake needs a copy step at RUNTIME, and the ENTRYPOINT rule immediately
+#      below means there is nowhere for one to live.
+# core-server's `syncCfgPlugin` writes from the HOST before the container starts
+# — no volume, no entrypoint, full filesystem access. That is strictly better
+# than a bake, not a workaround for lacking one. If the launch-time network fetch
+# is the thing you want gone, `CFG_FOUNDRY_PLUGIN_PATH` is already wired and
+# unset: it takes the local-source branch with no image change at all.
 #
 # DO NOT add an ENTRYPOINT here. cfg-core-server launches the container with its
 # own `entrypoint` (FOUNDRY_GROUP_WRITABLE_ENTRYPOINT) that `exec`s felddy's
