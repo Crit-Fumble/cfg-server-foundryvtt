@@ -18,17 +18,31 @@ their enable flag in `core.moduleConfiguration` keyed by id, so changing it
 orphans every world's setting). It carries campaign linking, runtime player
 provisioning, the world↔platform document sync couriers, and session reporting —
 for CFG-hosted **and** self-hosted worlds alike. It was extracted from
-`cfg-foundry-plugin` at module 2.48.3; the draft **3D overlay stayed behind**
-there and becomes its own optional module.
+`cfg-foundry-plugin` at module 2.48.3; the **3D overlay** went to
+`cfg-app-playtable` as the separate **`cfg-playtable`** module (2026-08-16), and
+`cfg-foundry-plugin` is now archived — nothing "stays behind" there.
+
+⚠️ `cfg-playtable` **requires** `crit-fumble-core` at runtime: the extraction
+deliberately kept writing flags in the `crit-fumble-core` namespace, which is what
+made it a pure move with no data migration. It is declared in the module's
+`relationships.requires`, not hidden.
 
 **Delivery channel:** each `v*` release of this repo attaches `module.json` +
 `module.zip` as GitHub release assets, and the manifest's own URLs point at
 `releases/latest/download/…` — so a release here *is* a module publish (a
 curated default, replacing "every hosted launch installs whatever is on `main`").
 
-> ⚠️ Until `foundryPluginManifestUrl` is flipped in cfg-core-server config,
-> hosted launches still install from `cfg-foundry-plugin` `main` — that repo's
-> `main` remains the LIVE channel and must not be restructured first.
+> ✅ **Flipped 2026-08-07 — this repo's release assets ARE the live channel.**
+> `foundryPluginManifestUrl` points at
+> `cfg-server-foundryvtt/releases/latest/download/module.json` in every config
+> location, production override included, and `cfg-foundry-plugin` is archived.
+> Verified 2026-08-16: `v0.4.1` serves `crit-fumble-core` 3.0.0.
+>
+> ⚠️ This block used to forbid restructuring `cfg-foundry-plugin` because it was
+> still the live channel. That prohibition outlived the work by nine days — long
+> enough that a reader today would refuse a correct change. Left as a correction
+> rather than deleted, because a stale *prohibition* is the costly kind of drift:
+> nobody questions a warning.
 
 ```bash
 cd module
@@ -85,7 +99,8 @@ change with felddy as the documented rollback.
 - [ ] Swap `cfg-core-server` `foundryImage` in dev → prod (still pure passthrough).
 - [ ] Co-located service-GM agent, gated by `SERVICE_GM_ENABLED` (default off).
 - [x] **Module source in-repo** (`module/`) + release-asset delivery channel.
-- [ ] Flip `foundryPluginManifestUrl` to this repo's release assets (owner/config).
+- [x] **Flip `foundryPluginManifestUrl` to this repo's release assets** — done 2026-08-07,
+      all config locations incl. the production override.
 - ~~Bake the `crit-fumble-core` plugin into the image (collapse `syncCfgPlugin`)~~ —
       **rejected, [#1](https://github.com/Crit-Fumble/cfg-server-foundryvtt/issues/1)
       closed 2026-08-15.** `VOLUME /data` shadows anything baked to
