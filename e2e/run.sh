@@ -6,6 +6,20 @@ set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 REPO="$(cd "$HERE/.." && pwd)"
+
+# Load e2e/.env into THIS shell (`set -a` = export, so compose interpolation
+# and the Playwright process both inherit it). It must load before ANY of the
+# resolution below — E2E_FOUNDRY_PORT, FOUNDRY_STORAGE_ROOTS, FOUNDRY_CACHE_DIR,
+# FOUNDRY_WORLD_SRC and E2E_LICENSED_MODULES are all documented as .env-settable,
+# but the file was only ever CHECKED for existence, never loaded: a .env-only
+# override silently fell back to its default, exactly the quiet-wrong-resolution
+# failure the storage-root block below exists to prevent.
+if [ ! -f "$HERE/.env" ]; then
+  echo "✗ $HERE/.env missing — copy e2e/.env.example and set FOUNDRY_LICENSE_KEY" >&2
+  exit 1
+fi
+set -a; . "$HERE/.env"; set +a
+
 PORT="${E2E_FOUNDRY_PORT:-30001}"
 COMPOSE="docker compose -f $HERE/compose.yml"
 # ── Where the seed fixtures come from ───────────────────────────────────────
@@ -40,11 +54,6 @@ if [ -z "$DEV_CACHE" ]; then
       break
     fi
   done
-fi
-
-if [ ! -f "$HERE/.env" ]; then
-  echo "✗ $HERE/.env missing — copy e2e/.env.example and set FOUNDRY_LICENSE_KEY" >&2
-  exit 1
 fi
 
 # Seed the isolated, writable cache once (felddy writes CACHEDIR.TAG/backoff here).
@@ -127,10 +136,20 @@ echo "  installed $(node -p "require('$MOD/module.json').title + ' ' + require('
 # ⛔ LICENSED CONTENT NEVER ENTERS THIS REPO. The source install and .e2e-data
 # are both gitignored; this copy is local plumbing for content the fixture
 # license already owns. To add content: put the module into the source
-# install's Data/modules/ (e.g. rsync from a licensed instance you own), then
-# list the ids in E2E_LICENSED_MODULES (e2e/.env) — licensed-modules.spec.ts
-# fails on any listed id that did not land, and SKIPS (loudly, as UNVERIFIED)
-# when the variable is unset, so machines without the content stay honest.
+# install's Data/modules/, then list the ids in E2E_LICENSED_MODULES
+# (e2e/.env) — licensed-modules.spec.ts fails on any listed id that did not
+# land, and SKIPS (loudly, as UNVERIFIED) when the variable is unset, so
+# machines without the content stay honest.
+#
+# ⚠️ PROTECTED (premium) MODULES CANNOT BE COPIED IN FROM ANOTHER INSTALL.
+# Their signature.json is bound to the license that installed them; under any
+# other license Foundry logs "Invalid signature file for protected module"
+# (Logs/debug-*.log) and silently EXCLUDES the module from its package index —
+# game.modules never sees it. Measured 2026-08-15: all 7 premium modules
+# rsync'd from a prod install failed exactly this way. Install them ONCE
+# through THIS container's setup UI (compose up, /setup, Premium Content) so
+# foundryvtt.com issues signatures for the fixture license, then copy the
+# freshly-signed dirs back to the source install so reseeds survive.
 if [ -n "${WORLD_SRC:-}" ] && [ -d "$WORLD_SRC/Data/modules" ]; then
   SEEDED_MODS=""
   for _mod in "$WORLD_SRC"/Data/modules/*/; do
