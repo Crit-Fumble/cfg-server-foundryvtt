@@ -21,7 +21,7 @@
 #
 # ── THE PIN BELOW IS felddy 14.366 ──────────────────────────────────────────
 # Verified against the registry, not Docker Hub's tag JSON: both `:14` and
-# `:14.365` resolve to bb8402d7…, and the previous pin 097f876d… is `:14.364`.
+# `:14.366` resolve to e494b6ad…, and the previous pin bb8402d7… is `:14.365`.
 #
 # ⛔ THIS DIGEST IS THE ONLY VERSION KNOB THIS FILE MAY EVER HAVE. `ARG
 # FOUNDRY_VERSION` is a permanent anti-pattern here: the Foundry APP version is
