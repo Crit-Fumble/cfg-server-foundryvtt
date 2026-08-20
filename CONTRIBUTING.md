@@ -57,12 +57,14 @@ npm run e2e:down                # tear down (-v)
 
 ## The Server Manager module (`module/`)
 
-The module has its own npm install (`@crit-fumble/shared` comes from GitHub
-Packages — see `module/.npmrc` for the local auth one-liner) and its own suites:
+The module has its own npm install — **tokenless**: it depends on nothing
+private (the code-editor validators were vendored into
+`module/scripts/lib/code-editor-core.js` on 2026-08-19, dt#623) — and its own
+suites:
 
 ```bash
 cd module
-env "npm_config_//npm.pkg.github.com/:_authToken=$(gh auth token)" npm ci
+npm ci
 npm test                 # jest unit suite — this is what CI Gate runs
 npm run build:zip        # pack smoke: dist/module.json + dist/module.zip
 npm run test:foundry:up  # integration stack (needs a licensed Foundry account —

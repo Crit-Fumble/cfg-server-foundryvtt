@@ -18,7 +18,7 @@ Two suites live here, and they have nothing in common except the directory:
 
 ```bash
 cd module
-env "npm_config_//npm.pkg.github.com/:_authToken=$(gh auth token)" npm ci
+npm ci
 npm test              # jest — also run by the repo-root husky hooks and CI Gate
 ```
 

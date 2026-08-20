@@ -19,9 +19,6 @@ on:
 
 permissions:
   contents: read
-  # @crit-fumble/shared installs from GitHub Packages; GITHUB_TOKEN cannot read
-  # it without this, so npm ci 401s no matter what auth the step passes.
-  packages: read
 
 jobs:
   unit:
@@ -36,14 +33,11 @@ jobs:
           node-version-file: .nvmrc
           cache: npm
           cache-dependency-path: module/package-lock.json
-          # Writes the //npm.pkg.github.com/:_authToken line into the runner's
-          # .npmrc. Without it, the repo .npmrc only names the registry and
-          # nothing binds a token to it — NODE_AUTH_TOKEN alone is ignored.
-          registry-url: 'https://npm.pkg.github.com'
-          scope: '@crit-fumble'
+      # Tokenless on purpose: the module has ZERO @crit-fumble/* dependencies
+      # (vendored 2026-08-19, dt#623) — this job runs on any fork, no org
+      # token, no GitHub Packages. If npm ci ever needs auth again, a public
+      # repo has regressed to depending on a private package.
       - run: npm ci
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - run: npm test
       # Pack smoke — build-zip walks the real tree, so a deleted/renamed runtime
       # file that tests don't import still fails here instead of at release time.
