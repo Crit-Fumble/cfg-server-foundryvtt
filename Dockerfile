@@ -19,9 +19,18 @@
 # (cfg-core-server already documents felddy rolling 14.361 -> 14.364 stranding
 # installs). A digest makes the image reproducible + the swap/rollback symmetric.
 #
-# ── THE PIN BELOW IS felddy 14.366 ──────────────────────────────────────────
-# Verified against the registry, not Docker Hub's tag JSON: both `:14` and
-# `:14.366` resolve to e494b6ad…, and the previous pin bb8402d7… is `:14.365`.
+# ── THE PIN BELOW IS felddy 14.367 ──────────────────────────────────────────
+# Resolve it against the REGISTRY manifest endpoint, not Docker Hub's tag JSON:
+# `:14` and `:14.<n>` must both answer with the digest on the FROM line below.
+#
+# ⛔ DO NOT RESTATE SPECIFIC DIGESTS IN THIS COMMENT. They rot at every bump —
+# this paragraph named the 14.364/14.365 pair through the 14.366 bump and the
+# 14.365/14.366 pair through 14.367, and upstream-watch only rewrites the header
+# line above. State the METHOD; the FROM line is the value.
+#
+# ⚠️ AND THE PIN HAS A SECOND HOME: module/tests/docker-compose.yml pins the
+# same base for the licensed integration harness. C7 in check-felddy-contract
+# ABORTS THE BUILD when the two disagree, so bump them together.
 #
 # ⛔ THIS DIGEST IS THE ONLY VERSION KNOB THIS FILE MAY EVER HAVE. `ARG
 # FOUNDRY_VERSION` is a permanent anti-pattern here: the Foundry APP version is
@@ -62,7 +71,7 @@
 # entrypoint + bash supervisor stays PID 1 — load-bearing: a clean SIGTERM is the
 # only thing that unlocks the world's LevelDB on shutdown.
 
-FROM felddy/foundryvtt@sha256:e494b6ad9005f7a2fbfaad69a45bd717c1ea3af78238ad2254c387ed457fa0b4
+FROM felddy/foundryvtt@sha256:5004a67fbbef8e3f5f82afb01c8dbe06626c57519cad541a59b1bdce3c2a97ac
 
 LABEL org.opencontainers.image.title="cfg-server-foundryvtt"
 LABEL org.opencontainers.image.description="CFG server-side wrapper for FoundryVTT hosting — additive felddy superset"

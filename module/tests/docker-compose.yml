@@ -27,7 +27,7 @@ services:
     # ships. Pinning was a provable no-op the day it was made — `:14` resolved to
     # exactly this digest — and check-felddy-contract.mjs now FAILS if this line and
     # the Dockerfile's FROM ever disagree, so bumping one without the other is loud.
-    image: felddy/foundryvtt@sha256:e494b6ad9005f7a2fbfaad69a45bd717c1ea3af78238ad2254c387ed457fa0b4
+    image: felddy/foundryvtt@sha256:5004a67fbbef8e3f5f82afb01c8dbe06626c57519cad541a59b1bdce3c2a97ac
     platform: linux/amd64
     init: true
     # Run as root in the TEST container so Foundry can traverse the root-owned
