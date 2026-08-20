@@ -46,7 +46,7 @@ curated default, replacing "every hosted launch installs whatever is on `main`")
 
 ```bash
 cd module
-env "npm_config_//npm.pkg.github.com/:_authToken=$(gh auth token)" npm ci
+npm ci               # tokenless — zero @crit-fumble deps since 2026-08-19
 npm test              # jest unit suite
 npm run build:zip     # dist/module.json + dist/module.zip (+ versioned zip)
 npm run test:foundry:up && npm run test:foundry   # integration (licensed Foundry)

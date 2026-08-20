@@ -1,4 +1,24 @@
-// node_modules/@crit-fumble/shared/dist/code-editor/json-document.js
+/**
+ * Pure JSON-editing validators for the in-Foundry code editor — VENDORED SOURCE.
+ *
+ * Until 2026-08-19 this file was GENERATED (esbuild) from @crit-fumble/shared's
+ * code-editor/json-document + code-editor/system-schema subpaths. That package
+ * went private with the 2026-08-19 relicense, and a public repo must stay
+ * runnable standalone (dt#623) — so the generated bundle was promoted to source
+ * and the dependency, the build step, and the GitHub Packages auth were removed.
+ *
+ * Two consequences, both deliberate:
+ *   - Parity with PlayTable's validators is FORKED from here on: cfg-shared
+ *     edits no longer flow into this file. That is the point of cutting a
+ *     public repo off a private package, not an oversight.
+ *   - Keep this file dependency-free (it was a self-contained ESM bundle and
+ *     must stay one — Foundry's browser can't resolve bare npm specifiers).
+ *
+ * Covered by tests/unit (jest) and the integration specs
+ * cfg-json-editor.spec.js + system-schema-descriptor.spec.js.
+ */
+
+// ── from cfg-shared src/code-editor/json-document.ts (vendored 2026-08-19) ──
 function parseJson(text) {
   try {
     return { ok: true, value: JSON.parse(text) };
@@ -85,7 +105,7 @@ function canSaveDocument(text, rules = {}) {
   return !checkFoundryDoc(parsed.value, rules).some((i) => i.severity === "error");
 }
 
-// node_modules/@crit-fumble/shared/dist/code-editor/system-schema.js
+// ── from cfg-shared src/code-editor/system-schema.ts (vendored 2026-08-19) ──
 var DEFAULT_IGNORED = [];
 function checkAgainstSystemSchema(value, descriptor, opts = {}) {
   if (!descriptor)
