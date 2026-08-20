@@ -19,7 +19,7 @@
 # (cfg-core-server already documents felddy rolling 14.361 -> 14.364 stranding
 # installs). A digest makes the image reproducible + the swap/rollback symmetric.
 #
-# ── THE PIN BELOW IS felddy 14.366 ──────────────────────────────────────────
+# ── THE PIN BELOW IS felddy 14.367 ──────────────────────────────────────────
 # Verified against the registry, not Docker Hub's tag JSON: both `:14` and
 # `:14.366` resolve to e494b6ad…, and the previous pin bb8402d7… is `:14.365`.
 #
@@ -62,7 +62,7 @@
 # entrypoint + bash supervisor stays PID 1 — load-bearing: a clean SIGTERM is the
 # only thing that unlocks the world's LevelDB on shutdown.
 
-FROM felddy/foundryvtt@sha256:e494b6ad9005f7a2fbfaad69a45bd717c1ea3af78238ad2254c387ed457fa0b4
+FROM felddy/foundryvtt@sha256:5004a67fbbef8e3f5f82afb01c8dbe06626c57519cad541a59b1bdce3c2a97ac
 
 LABEL org.opencontainers.image.title="cfg-server-foundryvtt"
 LABEL org.opencontainers.image.description="CFG server-side wrapper for FoundryVTT hosting — additive felddy superset"
