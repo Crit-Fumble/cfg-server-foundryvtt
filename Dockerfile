@@ -20,8 +20,17 @@
 # installs). A digest makes the image reproducible + the swap/rollback symmetric.
 #
 # ── THE PIN BELOW IS felddy 14.367 ──────────────────────────────────────────
-# Verified against the registry, not Docker Hub's tag JSON: both `:14` and
-# `:14.366` resolve to e494b6ad…, and the previous pin bb8402d7… is `:14.365`.
+# Resolve it against the REGISTRY manifest endpoint, not Docker Hub's tag JSON:
+# `:14` and `:14.<n>` must both answer with the digest on the FROM line below.
+#
+# ⛔ DO NOT RESTATE SPECIFIC DIGESTS IN THIS COMMENT. They rot at every bump —
+# this paragraph named the 14.364/14.365 pair through the 14.366 bump and the
+# 14.365/14.366 pair through 14.367, and upstream-watch only rewrites the header
+# line above. State the METHOD; the FROM line is the value.
+#
+# ⚠️ AND THE PIN HAS A SECOND HOME: module/tests/docker-compose.yml pins the
+# same base for the licensed integration harness. C7 in check-felddy-contract
+# ABORTS THE BUILD when the two disagree, so bump them together.
 #
 # ⛔ THIS DIGEST IS THE ONLY VERSION KNOB THIS FILE MAY EVER HAVE. `ARG
 # FOUNDRY_VERSION` is a permanent anti-pattern here: the Foundry APP version is
