@@ -8,8 +8,8 @@
  *
  * ── What may be sent, and why the filter is not negotiable ─────────────────────────────────
  * ONLY packs whose `metadata.packageType === 'world'`. Foundry states provenance itself: a pack
- * the GM created inside this world is `world`, while packs supplied by a module (WotC books,
- * Plutonium, a system's own content) carry that module's id and belong to their publisher.
+ * the GM created inside this world is `world`, while packs supplied by a module (licensed
+ * rulebooks, Plutonium, a system's own content) carry that module's id and belong to their publisher.
  *
  * The platform stores mirrored packs with an `origin` that ASSERTS the content is the GM's own —
  * that claim is what a future "publish/sell this as a module" path would rest on. Pushing a module
