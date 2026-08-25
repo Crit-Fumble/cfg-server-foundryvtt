@@ -393,7 +393,7 @@ const npc = await apiClient.generateRotFSNPC({
 
 ---
 
-## Core D&D 5E Data
+## Core 5E-Compatible Data
 
 ```javascript
 // Classes
