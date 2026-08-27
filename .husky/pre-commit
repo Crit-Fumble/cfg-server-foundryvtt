@@ -56,6 +56,23 @@ else
 fi
 echo "  secret scan passed"
 
+# ── Trademarks, on the lines this commit ADDS (dt#401) ──────────────────────
+# Single-source checker lives in the cfg-core-dev-tools workspace parent.
+# Product commits are made from inside that workspace, where this path
+# resolves; a standalone clone or CI checkout skips silently instead of
+# hard-failing on a missing sibling.
+TRADEMARKS_CHECK="$REPO_ROOT/../../dev/scripts/check-trademarks.mjs"
+if [ -f "$TRADEMARKS_CHECK" ]; then
+  echo "  trademarks (added lines)..."
+  node "$TRADEMARKS_CHECK" --changed || {
+    echo "  ✗ New trademark use in the lines this commit ADDS."
+    echo "    Say \"5E compatible\" (CLAUDE.md → Legal & Licensing), or — for a"
+    echo "    legitimate third-party product name — add an ALLOWLIST entry with"
+    echo "    its argument in cfg-core-dev-tools/dev/scripts/check-trademarks.mjs."
+    exit 1
+  }
+fi
+
 # ── Unit tests (no tsc — plain JS module) ─────────────────────────────────────
 echo "  unit tests..."
 npm test --silent
