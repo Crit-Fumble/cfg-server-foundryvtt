@@ -61,6 +61,13 @@ import { ModulePackImportSync } from './services/module-pack-import-sync.js'
 import { ScenePullSync } from './services/scene-pull-sync.js'
 import { registerJsonEditorHeaderButton } from './views/json-editor-header-button.js'
 import { registerSourcebookShelfButton } from './views/sourcebook-shelf.js'
+import { mountLoadingOverlay, unmountLoadingOverlay } from './views/loading-overlay.js'
+
+// Cover the cold-load black screen as early as possible. This esmodule
+// evaluates before `init` fires, while Foundry is still streaming world data +
+// modules, so mounting here (not from a hook) is what puts something on screen
+// during the longest part of the wait. Torn down at the `ready` hook below.
+mountLoadingOverlay()
 
 /* -------------------------------------------- */
 /*  Module-level State                           */
@@ -354,15 +361,27 @@ function _staggerStart(label, fn) {
 Hooks.once('ready', async () => {
   console.log(`CFG Core | Ready`)
 
+  // The cold-load black screen is over once Foundry is ready — drop the overlay.
+  unmountLoadingOverlay()
+
+  // World-scoped settings can only be written by a GM. A Trusted Player's client
+  // throwing `lacks permission to update Setting` on every load is pure noise
+  // (session-zero prod logs: players 401'd writing installationId + coreApiUrl),
+  // and players don't need these persisted — they resolve the endpoint from the
+  // same-origin URL below. So the setting writes here are GM-only.
+  const isGM = game.user?.isGM === true
+  const onHostedPath =
+    typeof window !== 'undefined' && window.location?.pathname?.startsWith('/servers/foundryvtt/') === true
+
   // Auto-correct `coreApiUrl` + `installationId` when running cfg-hosted
   // (proxied at `/servers/foundryvtt/{installationId}/*`). Existing worlds
   // may have stale values saved before the smart default landed — typically
   // the prod URL, which breaks iframe embedding in localdev / staging /
   // private tunnels. The installationId derives from the page path so the
   // plugin doesn't depend on `__CFG_HOSTED_CONTEXT__` injection or the
-  // pair-flow having run. Idempotent: only writes on actual change.
+  // pair-flow having run. Idempotent: only writes on actual change, GM-only.
   try {
-    if (typeof window !== 'undefined' && window.location.pathname.startsWith('/servers/foundryvtt/')) {
+    if (isGM && onHostedPath) {
       const detectedUrl = window.location.origin
       const storedUrl = game.settings.get(MODULE_ID, 'coreApiUrl')
       if (storedUrl !== detectedUrl) {
@@ -400,7 +419,9 @@ Hooks.once('ready', async () => {
   // authenticate as the installation. Owner-scoped on the server; a non-owner GM
   // gets no key and `applyHostedContext` clears any stale one → session fallback.
   // Awaited so the setting is live before the first heartbeat fires below.
-  if (getHostKind() === 'cfg-hosted') {
+  // GM-only: it writes world settings, and a non-GM never receives a key — a
+  // player stays on same-origin session auth (apiKey below resolves to null).
+  if (isGM && getHostKind() === 'cfg-hosted') {
     try {
       await applyHostedContext()
     } catch (err) {
@@ -408,7 +429,10 @@ Hooks.once('ready', async () => {
     }
   }
 
-  const apiUrl = game.settings.get(MODULE_ID, 'coreApiUrl')
+  // Prefer the same-origin URL on a cfg-hosted path so a non-GM player — who no
+  // longer writes `coreApiUrl` above — still targets the right endpoint even if
+  // the stored world setting is stale. Self-hosted falls back to the setting.
+  const apiUrl = (onHostedPath ? window.location.origin : null) || game.settings.get(MODULE_ID, 'coreApiUrl')
   // Both hosting modes read the same stored key: cfg-hosted gets an installation
   // key from `applyHostedContext` (programmatic pairing) or, if that couldn't mint
   // one, an empty value → session-cookie auth (same-origin). Self-hosted gets its
