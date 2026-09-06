@@ -57,11 +57,14 @@ npm run test:foundry:up && npm run test:foundry   # integration (licensed Foundr
 This image is a **superset of `felddy/foundryvtt`, pinned to a digest** — never a
 fork or a from-scratch rebuild. felddy keeps owning the hard, fragile parts (the
 licensed binary download/cache, license host-binding, `Config/admin.txt`, the
-`/auth /join /setup` surface, the `/data` layout, `uid 1000:1000`). We only *add*,
-and every addition is gated behind a **default-OFF** env flag, so the image stays
-provably byte-identical to felddy until a capability is turned on. That makes the
+`/auth /join /setup` surface, the `/data` layout, `uid 1000:1000`). We only *add*:
+every runtime capability is gated behind a **default-OFF** env flag, and the one
+filesystem addition — a static `ffmpeg` at `/usr/local/bin/ffmpeg`, which nothing
+in felddy ever calls — is declared exactly in `felddy-contract-rules.mjs`
+(`STATIC_FFMPEG` + `ADDITIONS`). So the image behaves byte-for-byte like felddy
+until a capability is turned on or the binary is run on purpose. That keeps the
 `cfg-core-server` image swap (`foundryImage`) a one-config, instantly-reversible
-change with felddy as the documented rollback.
+change with felddy as the documented rollback (which loses only ffmpeg).
 
 **Why own it at all:**
 - **Consolidation** — one repo for Foundry server-side complexity + a clean,
@@ -75,7 +78,13 @@ change with felddy as the documented rollback.
 ## Status — additive migration (risk-ascending, each step reversible)
 
 - [x] **Passthrough** — `FROM felddy@<digest>`, zero additions. Provably identical
-      to felddy; proves the image swap before anything is added.
+      to felddy; proved the image swap before anything was added. **Since 2026-09-06
+      the image carries ONE declared addition**: a static `ffmpeg`
+      (`COPY --from=mwader/static-ffmpeg@<index digest>`, 129 MB, one layer) so GMs
+      can convert token media next to their world data — Foundry animates WEBM
+      tokens, never GIF. cfg-core-server runs it as an ephemeral job container from
+      this image (never `docker exec`). Declared in `ADDITIONS`; asserted by
+      C3 (exact line), P2 (exactly one layer) and H_FFMPEG (it actually runs).
 - [x] **CI-assert the felddy passthrough + hard contract** — `check-felddy-contract.mjs`,
       required via CI Gate, with **no license and no secrets**. Three families, none
       redundant: the Dockerfile SOURCE stayed additive (the "DO NOT add an ENTRYPOINT"
@@ -96,7 +105,9 @@ change with felddy as the documented rollback.
       world's LevelDB actually unlocking on shutdown. These need `e2e/`, which is
       deliberately not in CI. ⚠️ Note `e2e/` does **not** cover the route prefix either —
       `compose.yml` sets no `FOUNDRY_ROUTE_PREFIX` and the specs hard-code `''`.
-- [ ] Swap `cfg-core-server` `foundryImage` in dev → prod (still pure passthrough).
+- [ ] Swap `cfg-core-server` `foundryImage` in dev → prod. ⚠️ As of 2026-09-06 prod
+      still launches `felddy/foundryvtt` directly — this swap is what puts the
+      ffmpeg layer in front of users, and rolling it back is one config line.
 - [ ] Co-located service-GM agent, gated by `SERVICE_GM_ENABLED` (default off).
 - [x] **Module source in-repo** (`module/`) + release-asset delivery channel.
 - [x] **Flip `foundryPluginManifestUrl` to this repo's release assets** — done 2026-08-07,
