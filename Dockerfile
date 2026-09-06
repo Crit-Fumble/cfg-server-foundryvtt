@@ -66,11 +66,21 @@
 # data dir mounted, uid 1000 + the install gid) and removes it when the job
 # exits. The image already being on every host is the reason it lives here.
 #
-# WHY A STATIC BINARY VIA `COPY --from`, NOT `apt-get install ffmpeg`: 129 MB in
-# one layer with zero shared libraries, versus ~450 MB and ~200 packages via apt
-# on this Debian base. The source is pinned by its manifest-LIST digest (not a
-# platform digest) so the same line resolves arm64 on a dev Mac and amd64 in CI
-# and prod — the contract check (P1) needs wrapper and base on one platform.
+# WHY A STATIC BINARY VIA `COPY --from`, NOT `apt-get install ffmpeg`: ~130 MB
+# in one layer with zero shared libraries, versus ~450 MB and ~200 packages via
+# apt on this Debian base. The source is pinned by its manifest-LIST digest (not
+# a platform digest) so the same line resolves arm64 on a dev Mac and amd64 in
+# CI and prod — the contract check (P1) needs wrapper and base on one platform.
+# 9.0.1 (not the 7.1 first proposed) because 7.1 predates the 2026 batch of
+# demuxer/decoder CVEs (CVE-2026-39210..39218); the sandbox contains a decoder
+# bug, a current build avoids it. upstream-watch never bumps this digest — a
+# codec binary bump is a reviewed change (re-run the argv template + the
+# playlist-named-.gif refusal against the new build before pinning it).
+#
+# LICENSE: /usr/local/bin/ffmpeg is a GPLv3 static build (--enable-gpl
+# --enable-version3, no nonfree components) redistributed inside this AGPL-3.0
+# image as an aggregated component; its source is mwader/static-ffmpeg plus the
+# versions.json that build embeds.
 #
 # ⛔ NEVER COPY it under /data (shadowed by the bind mount — H_DATA_EMPTY) or
 # /home/node (H_SCRIPTS reads any changed file there as felddy's scripts being
@@ -103,11 +113,16 @@
 
 FROM felddy/foundryvtt@sha256:5004a67fbbef8e3f5f82afb01c8dbe06626c57519cad541a59b1bdce3c2a97ac
 
-# static ffmpeg 7.1 (mwader/static-ffmpeg:7.1, manifest-list digest) — see the
-# header. Declared verbatim in felddy-contract-rules.mjs STATIC_FFMPEG.
-COPY --from=mwader/static-ffmpeg@sha256:a8090df5f5608daef387e1b2e93b98aaacb4d92153ad904e7d715c725724fca4 /ffmpeg /usr/local/bin/ffmpeg
+# static ffmpeg 9.0.1 (mwader/static-ffmpeg:9.0.1, manifest-list digest) — see
+# the header. Declared verbatim in felddy-contract-rules.mjs STATIC_FFMPEG.
+COPY --from=mwader/static-ffmpeg@sha256:54e55b0cb8f672870fc38ceb2e6c411855cb3b39c505f5f3b2505ee01ed5f2b7 /ffmpeg /usr/local/bin/ffmpeg
 
 LABEL org.opencontainers.image.title="cfg-server-foundryvtt"
 LABEL org.opencontainers.image.description="CFG server-side wrapper for FoundryVTT hosting — additive felddy superset"
 LABEL org.opencontainers.image.source="https://github.com/Crit-Fumble/cfg-server-foundryvtt"
 LABEL org.opencontainers.image.licenses="AGPL-3.0-only"
+# The tool contract cfg-core-server's data-ops catalog gates on: a comma list of
+# tools this image can run as an ephemeral job. No label → no ops offered, so
+# an image without ffmpeg never advertises "Convert to WebM". Declared in
+# ADDITIONS.labels; C2/P4 keep the Dockerfile and the rules in lockstep.
+LABEL com.crit-fumble.tools="ffmpeg"
