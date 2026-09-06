@@ -79,12 +79,14 @@ change with felddy as the documented rollback (which loses only ffmpeg).
 
 - [x] **Passthrough** — `FROM felddy@<digest>`, zero additions. Provably identical
       to felddy; proved the image swap before anything was added. **Since 2026-09-06
-      the image carries ONE declared addition**: a static `ffmpeg`
-      (`COPY --from=mwader/static-ffmpeg@<index digest>`, 129 MB, one layer) so GMs
+      the image carries ONE declared addition**: a static `ffmpeg` 9.0.1
+      (`COPY --from=mwader/static-ffmpeg@<index digest>`, ~130 MB, one layer) so GMs
       can convert token media next to their world data — Foundry animates WEBM
       tokens, never GIF. cfg-core-server runs it as an ephemeral job container from
-      this image (never `docker exec`). Declared in `ADDITIONS`; asserted by
-      C3 (exact line), P2 (exactly one layer) and H_FFMPEG (it actually runs).
+      this image (never `docker exec`), and offers the op only when the image's
+      `com.crit-fumble.tools` label names `ffmpeg`. Declared in `ADDITIONS`;
+      asserted by C3 (exact line), C2/P4 (the label), P2 (exactly one layer),
+      H_FFMPEG (it runs) and H_FFMPEG_ENCODERS (it carries libvpx-vp9).
 - [x] **CI-assert the felddy passthrough + hard contract** — `check-felddy-contract.mjs`,
       required via CI Gate, with **no license and no secrets**. Three families, none
       redundant: the Dockerfile SOURCE stayed additive (the "DO NOT add an ENTRYPOINT"

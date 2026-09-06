@@ -44,6 +44,7 @@ LABEL org.opencontainers.image.title="cfg-server-foundryvtt"
 LABEL org.opencontainers.image.description="CFG server-side wrapper for FoundryVTT hosting — additive felddy superset"
 LABEL org.opencontainers.image.source="https://github.com/Crit-Fumble/cfg-server-foundryvtt"
 LABEL org.opencontainers.image.licenses="AGPL-3.0-only"
+LABEL com.crit-fumble.tools="ffmpeg"
 `
 
 const BASE_ENV = [
@@ -104,7 +105,8 @@ function goodProbes() {
     pid1: '/bin/bash ./entrypoint.sh resources/app/main.mjs --port=30000',
     stopMs: 39,
     stopExitCode: '143',
-    ffmpegVersion: 'ffmpeg version 7.1 Copyright (c) 2000-2024 the FFmpeg developers',
+    ffmpegVersion: 'ffmpeg version 9.0.1 Copyright (c) 2000-2026 the FFmpeg developers',
+    ffmpegEncoders: ' V....D libvpx-vp9           libvpx VP9 (codec vp9)\n V....D libx264              libx264 H.264',
   }
 }
 
@@ -330,7 +332,7 @@ test('H_SCRIPTS catches a removed or added felddy file (exact key set)', () => {
 })
 
 test('H_PROBE treats a MISSING probe result as failure, never as a pass', () => {
-  for (const field of ['uid', 'gid', 'entrypointExecutable', 'overrideExit', 'pid1', 'ffmpegVersion']) {
+  for (const field of ['uid', 'gid', 'entrypointExecutable', 'overrideExit', 'pid1', 'ffmpegVersion', 'ffmpegEncoders']) {
     const p = goodProbes()
     delete p[field]
     const problems = hc(wrapperImage(), p)
@@ -359,6 +361,21 @@ test('H_FFMPEG catches a missing or broken ffmpeg — the one declared addition 
   // exactly as declared; only running the binary sees it.
   assert.deepEqual(checkDockerfile(GOOD_DOCKERFILE), [])
   assert.deepEqual(checkPassthrough(wrapperImage(), baseImage()), [])
+})
+
+test('H_FFMPEG_ENCODERS catches a static build without libvpx-vp9 — the gif→webm template needs it', () => {
+  const noVpx = goodProbes()
+  noVpx.ffmpegEncoders = ' V....D libx264              libx264 H.264\n V....D mpeg4                MPEG-4 part 2'
+  fires(hc(wrapperImage(), noVpx), 'H_FFMPEG_ENCODERS')
+})
+
+test('C2 catches the tools label going missing or naming a different tool set', () => {
+  fires(checkDockerfile(GOOD_DOCKERFILE.replace(/LABEL com\.crit-fumble\.tools.*\n/, '')), 'C2')
+  fires(checkDockerfile(GOOD_DOCKERFILE.replace('com.crit-fumble.tools="ffmpeg"', 'com.crit-fumble.tools="imagemagick"')), 'C2')
+  // And on the IMAGE: P4 sees a wrapper that dropped the declared label.
+  const dropped = wrapperImage()
+  delete dropped.Config.Labels['com.crit-fumble.tools']
+  fires(checkPassthrough(dropped, baseImage()), 'P4')
 })
 
 test('H_VERSION catches a digest bump that silently moved the Foundry version', () => {

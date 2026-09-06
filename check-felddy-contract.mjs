@@ -247,6 +247,10 @@ function main() {
   probes.ffmpegVersion = probe('ffmpeg', () =>
     sh('docker', ['run', '--rm', '--entrypoint', HARD_CONTRACT.ffmpeg, CHECK_TAG, '-version']).split('\n')[0].trim(),
   )
+  // H_FFMPEG_ENCODERS — the build must carry libvpx-vp9 (the gif→webm template).
+  probes.ffmpegEncoders = probe('ffmpegEncoders', () =>
+    sh('docker', ['run', '--rm', '--entrypoint', HARD_CONTRACT.ffmpeg, CHECK_TAG, '-hide_banner', '-encoders']),
+  )
 
   // core-server's VERBATIM override; `--version` short-circuits entrypoint.sh
   // before any license, network or backoff work.

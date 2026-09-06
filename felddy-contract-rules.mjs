@@ -30,7 +30,11 @@
  */
 export const STATIC_FFMPEG = {
   source: 'mwader/static-ffmpeg',
-  digest: 'sha256:a8090df5f5608daef387e1b2e93b98aaacb4d92153ad904e7d715c725724fca4',
+  // 9.0.1 manifest-list digest (amd64 + arm64). Verified 2026-09-06: libvpx-vp9
+  // present, the gif→webm argv template yields valid EBML, a playlist named .gif
+  // is refused under `-f gif`. Bumping = new digest here (the Dockerfile COPY is
+  // checked against it) + re-running those three checks.
+  digest: 'sha256:54e55b0cb8f672870fc38ceb2e6c411855cb3b39c505f5f3b2505ee01ed5f2b7',
   path: '/usr/local/bin/ffmpeg',
 }
 const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&')
@@ -49,6 +53,13 @@ export const ADDITIONS = {
       'CFG server-side wrapper for FoundryVTT hosting — additive felddy superset',
     'org.opencontainers.image.source': 'https://github.com/Crit-Fumble/cfg-server-foundryvtt',
     'org.opencontainers.image.licenses': 'AGPL-3.0-only',
+    /**
+     * The tool contract: a comma list of tools this image can run as an
+     * ephemeral job. cfg-core-server's data-ops catalog offers an op only when
+     * the launch image carries the tool's token here — so an image without
+     * ffmpeg never advertises "Convert to WebM". Not a runtime switch.
+     */
+    'com.crit-fumble.tools': 'ffmpeg',
   },
   /**
    * ENV the wrapper adds, name -> its REQUIRED DEFAULT-OFF value. Empty today.
@@ -559,6 +570,15 @@ export function checkHardContract(wrapper, probes, baseScripts, hard = HARD_CONT
     problems.push(
       `H_FFMPEG ${hard.ffmpeg} -version printed ${JSON.stringify(probes.ffmpegVersion)}, expected "ffmpeg version …" — ` +
         'the declared static ffmpeg is missing, not executable, or not static',
+    )
+  }
+
+  // H_FFMPEG_ENCODERS — core-server's gif→webm template encodes libvpx-vp9. A
+  // digest bump to a build without libvpx passes every other rule and fails
+  // per job in prod; it must go red here instead.
+  if (need('ffmpegEncoders', probes.ffmpegEncoders) && !/\blibvpx-vp9\b/.test(String(probes.ffmpegEncoders))) {
+    problems.push(
+      `H_FFMPEG_ENCODERS ${hard.ffmpeg} -encoders lists no libvpx-vp9 — the data-ops gif→webm template cannot run on this build`,
     )
   }
 
