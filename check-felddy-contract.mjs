@@ -4,7 +4,8 @@
  *
  * ## Why this exists
  *
- * The Dockerfile is `FROM` + four `LABEL`s, and its load-bearing rule —
+ * The Dockerfile is `FROM` + four `LABEL`s + one declared `COPY` (a static ffmpeg,
+ * see STATIC_FFMPEG in the rules file), and its load-bearing rule —
  *
  *   > DO NOT add an ENTRYPOINT here. [...] felddy's entrypoint + bash supervisor
  *   > stays PID 1 — load-bearing: a clean SIGTERM is the only thing that unlocks
@@ -240,6 +241,13 @@ function main() {
   probes.scriptDigests = probe('scriptDigests', () => scriptDigests(CHECK_TAG)) || {}
   const baseScripts = probe('baseScriptDigests', () => scriptDigests(from)) || {}
 
+  // H_FFMPEG — the one declared addition must actually run. `-version` exits 0 and
+  // prints "ffmpeg version …" on its first line; a missing or non-executable
+  // binary fails the probe, which need() turns into a failure, never a skip.
+  probes.ffmpegVersion = probe('ffmpeg', () =>
+    sh('docker', ['run', '--rm', '--entrypoint', HARD_CONTRACT.ffmpeg, CHECK_TAG, '-version']).split('\n')[0].trim(),
+  )
+
   // core-server's VERBATIM override; `--version` short-circuits entrypoint.sh
   // before any license, network or backoff work.
   try {
@@ -297,7 +305,8 @@ function main() {
   console.log(`platform: ${wrapper.Os}/${wrapper.Architecture} (the pinned base is a multi-platform list; this proves ONE platform)`)
   console.log(
     `probes:  uid=${probes.uid}:${probes.gid} pid1=${JSON.stringify(probes.pid1)} ` +
-      `stop=${probes.stopMs}ms exit=${probes.stopExitCode} scripts=${Object.keys(probes.scriptDigests).length}`,
+      `stop=${probes.stopMs}ms exit=${probes.stopExitCode} scripts=${Object.keys(probes.scriptDigests).length} ` +
+      `ffmpeg=${JSON.stringify(probes.ffmpegVersion)}`,
   )
 
   if (failed) {

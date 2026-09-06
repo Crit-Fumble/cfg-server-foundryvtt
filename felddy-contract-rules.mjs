@@ -20,6 +20,27 @@
 // The ONE place a legitimately-added capability is declared. Everything else is
 // compared against the base and must be identical. Adding a capability means
 // editing THIS object — which is the point: the addition becomes reviewable.
+/**
+ * The ONE filesystem addition: a static ffmpeg binary (owner decision
+ * 2026-09-06 — "ffmpeg in the Foundry container for now"). Source is pinned by
+ * its manifest-LIST digest so the same COPY resolves arm64 on a dev Mac and
+ * amd64 in CI/prod. Bumping ffmpeg = a new digest HERE and in the Dockerfile;
+ * the COPY pattern below is built from these values, so they cannot drift apart
+ * without C3 going red. Why static, why here, why not exec: Dockerfile header.
+ */
+export const STATIC_FFMPEG = {
+  source: 'mwader/static-ffmpeg',
+  digest: 'sha256:a8090df5f5608daef387e1b2e93b98aaacb4d92153ad904e7d715c725724fca4',
+  path: '/usr/local/bin/ffmpeg',
+}
+const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&')
+/** The exact Dockerfile line ADDITIONS admits — also what the mutation suite builds its fixture from. */
+export const STATIC_FFMPEG_COPY_LINE = `COPY --from=${STATIC_FFMPEG.source}@${STATIC_FFMPEG.digest} /ffmpeg ${STATIC_FFMPEG.path}`
+const STATIC_FFMPEG_COPY_RE = new RegExp(
+  `^COPY\\s+--from=${escapeRe(STATIC_FFMPEG.source)}@${escapeRe(STATIC_FFMPEG.digest)}\\s+/ffmpeg\\s+${escapeRe(STATIC_FFMPEG.path)}\\s*$`,
+  'i',
+)
+
 export const ADDITIONS = {
   /** LABELs the wrapper sets. Four of these deliberately OVERRIDE felddy's own. */
   labels: {
@@ -35,13 +56,19 @@ export const ADDITIONS = {
    * machine-checked rather than aspirational: a capability shipping ON fails here.
    */
   env: {},
-  /** Filesystem layers the wrapper adds. Zero today — the image is pure passthrough. */
-  layers: 0,
+  /**
+   * Filesystem layers the wrapper adds. ONE: the static ffmpeg binary
+   * (STATIC_FFMPEG). P2 counts exactly this many — a duplicated COPY line passes
+   * C3 (the text is admitted) and is caught HERE as two layers against one.
+   */
+  layers: 1,
   /**
    * Dockerfile instruction forms that may appear. A line matching none of these is
    * an undeclared instruction and fails. Comments and blanks are stripped first.
+   * The COPY pattern is EXACT — source, digest and destination — so a floating
+   * tag, another digest, or another destination is undeclared (C3).
    */
-  instructions: [/^FROM\s/i, /^LABEL\s/i],
+  instructions: [/^FROM\s/i, /^LABEL\s/i, STATIC_FFMPEG_COPY_RE],
 }
 
 /**
@@ -71,6 +98,8 @@ export const HARD_CONTRACT = {
   gid: 1000,
   entrypoint: ['./entrypoint.sh'],
   workingDir: '/home/node',
+  /** The declared static ffmpeg — core-server's media-ops job runner execs exactly this path. */
+  ffmpeg: STATIC_FFMPEG.path,
   cmdMustContain: '--dataPath=/data',
   /** felddy's own files. An exact key set — a new or removed script fails too. */
   scripts: [
@@ -519,6 +548,18 @@ export function checkHardContract(wrapper, probes, baseScripts, hard = HARD_CONT
   }
   if (probes.stopMs !== undefined && Number(probes.stopMs) > 5000) {
     problems.push(`H_SIGTERM the container took ${probes.stopMs}ms to stop — it is not handling SIGTERM promptly`)
+  }
+
+  // H_FFMPEG — the ONE declared addition (STATIC_FFMPEG) must actually run. A COPY
+  // that lands the wrong file, a lost executable bit, or a dynamic binary missing
+  // its libraries all pass C3 and P2 (a layer is a layer); only running it proves
+  // it. core-server's media-ops job runner execs this path and would fail at
+  // runtime, per job, with nothing in this repo's CI ever having said so.
+  if (need('ffmpegVersion', probes.ffmpegVersion) && !/^ffmpeg version \S+/.test(String(probes.ffmpegVersion))) {
+    problems.push(
+      `H_FFMPEG ${hard.ffmpeg} -version printed ${JSON.stringify(probes.ffmpegVersion)}, expected "ffmpeg version …" — ` +
+        'the declared static ffmpeg is missing, not executable, or not static',
+    )
   }
 
   return problems

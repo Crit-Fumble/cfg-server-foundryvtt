@@ -2,12 +2,13 @@
 #
 # cfg-server-foundryvtt — CFG's server-side wrapper image for FoundryVTT hosting.
 #
-# Strict ADDITIVE SUPERSET of felddy/foundryvtt. This first cut IS felddy, pinned
-# to an exact digest and re-tagged under CFG's registry — so pointing
-# cfg-core-server's `foundryImage` at it is a provably byte-identical, one-config
-# change that reverts to felddy in one line. felddy keeps owning the licensed
-# binary download/cache, the license host-binding, Config/admin.txt, the
-# /auth /join /setup surface, the /data layout, and uid 1000:1000.
+# Strict ADDITIVE SUPERSET of felddy/foundryvtt: felddy pinned to an exact digest,
+# re-tagged under CFG's registry, plus exactly ONE declared addition (a static
+# ffmpeg binary — see "THE ONE ADDITION" below). Pointing cfg-core-server's
+# `foundryImage` at it is still a one-config change that reverts to felddy in one
+# line (losing only ffmpeg). felddy keeps owning the licensed binary
+# download/cache, the license host-binding, Config/admin.txt, the /auth /join
+# /setup surface, the /data layout, and uid 1000:1000.
 #
 # ⚠️ THE UID IS 1000:1000, NOT 1000:1001 — this line said 1001 until 2026-08-15,
 # and so does README.md. 1001 is CFG_DATA_GID, a SUPPLEMENTARY group cfg-core-server
@@ -47,9 +48,38 @@
 # line, update the `foundryvtt` case in that workflow or its sed will hard-fail
 # (deliberately loud, never a quiet no-op).
 #
-# Future additive capabilities land behind default-OFF env flags, each on its own
-# prove-passthrough cycle: a CO-LOCATED headless service-GM provisioning agent
-# (SERVICE_GM_ENABLED, talking to localhost:30000). NOT present yet.
+# Future additive RUNTIME capabilities land behind default-OFF env flags, each on
+# its own prove-passthrough cycle: a CO-LOCATED headless service-GM provisioning
+# agent (SERVICE_GM_ENABLED, talking to localhost:30000). NOT present yet.
+#
+# ── THE ONE ADDITION: a static ffmpeg at /usr/local/bin/ffmpeg (2026-09-06) ────
+# Owner decision: ffmpeg lives in the Foundry image "for now" (shared media deps
+# may be lifted across kinds later). Foundry animates WEBM tokens and never GIF,
+# so GMs need a converter next to their world data. It is NOT a runtime switch
+# and needs no env flag: nothing in felddy ever calls it, so the image behaves
+# byte-for-byte like felddy until something runs the binary on purpose.
+#
+# HOW IT IS INVOKED — never `docker exec`. core-server reaches Docker through a
+# socket proxy whose allowlist has no exec; instead it starts THIS image as an
+# ephemeral job container (entrypoint /usr/local/bin/ffmpeg, validated argv,
+# network none, read-only rootfs, cap-drop ALL, only the one installation's
+# data dir mounted, uid 1000 + the install gid) and removes it when the job
+# exits. The image already being on every host is the reason it lives here.
+#
+# WHY A STATIC BINARY VIA `COPY --from`, NOT `apt-get install ffmpeg`: 129 MB in
+# one layer with zero shared libraries, versus ~450 MB and ~200 packages via apt
+# on this Debian base. The source is pinned by its manifest-LIST digest (not a
+# platform digest) so the same line resolves arm64 on a dev Mac and amd64 in CI
+# and prod — the contract check (P1) needs wrapper and base on one platform.
+#
+# ⛔ NEVER COPY it under /data (shadowed by the bind mount — H_DATA_EMPTY) or
+# /home/node (H_SCRIPTS reads any changed file there as felddy's scripts being
+# hijacked). /usr/local/bin is outside both. The line is declared, EXACTLY, in
+# felddy-contract-rules.mjs (STATIC_FFMPEG + ADDITIONS): C3 refuses any other
+# COPY — a floating `:7.1` tag, another digest, another destination; P2 counts
+# exactly one added layer; H_FFMPEG proves the binary actually runs. Bumping
+# ffmpeg means a new index digest in BOTH places, and the mutation suite goes
+# red if they disagree.
 #
 # ⛔ BAKING THE crit-fumble-core PLUGIN IN WAS INVESTIGATED AND REJECTED (#1,
 # closed 2026-08-15). It is NOT a pending capability — it cannot work here, and
@@ -72,6 +102,10 @@
 # only thing that unlocks the world's LevelDB on shutdown.
 
 FROM felddy/foundryvtt@sha256:5004a67fbbef8e3f5f82afb01c8dbe06626c57519cad541a59b1bdce3c2a97ac
+
+# static ffmpeg 7.1 (mwader/static-ffmpeg:7.1, manifest-list digest) — see the
+# header. Declared verbatim in felddy-contract-rules.mjs STATIC_FFMPEG.
+COPY --from=mwader/static-ffmpeg@sha256:a8090df5f5608daef387e1b2e93b98aaacb4d92153ad904e7d715c725724fca4 /ffmpeg /usr/local/bin/ffmpeg
 
 LABEL org.opencontainers.image.title="cfg-server-foundryvtt"
 LABEL org.opencontainers.image.description="CFG server-side wrapper for FoundryVTT hosting — additive felddy superset"

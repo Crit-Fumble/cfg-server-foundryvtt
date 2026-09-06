@@ -18,6 +18,8 @@ import assert from 'node:assert/strict'
 import {
   ADDITIONS,
   HARD_CONTRACT,
+  STATIC_FFMPEG,
+  STATIC_FFMPEG_COPY_LINE,
   checkDockerfile,
   checkHardContract,
   checkHarnessBase,
@@ -33,6 +35,10 @@ const GOOD_DOCKERFILE = `# a comment
 # more prose about why the digest is pinned
 
 FROM felddy/foundryvtt@sha256:${'b'.repeat(64)}
+
+# the one declared addition, built from the rules' own constants so this fixture
+# can never drift from what ADDITIONS admits
+${STATIC_FFMPEG_COPY_LINE}
 
 LABEL org.opencontainers.image.title="cfg-server-foundryvtt"
 LABEL org.opencontainers.image.description="CFG server-side wrapper for FoundryVTT hosting — additive felddy superset"
@@ -80,6 +86,8 @@ function baseImage() {
 function wrapperImage() {
   const w = baseImage()
   w.Config.Labels = { ...clone(BASE_LABELS), ...ADDITIONS.labels }
+  // The ONE declared layer (static ffmpeg). Base layers stay an unmodified prefix.
+  w.RootFS.Layers = [...w.RootFS.Layers, 'sha256:ffmpeg']
   return w
 }
 
@@ -96,6 +104,7 @@ function goodProbes() {
     pid1: '/bin/bash ./entrypoint.sh resources/app/main.mjs --port=30000',
     stopMs: 39,
     stopExitCode: '143',
+    ffmpegVersion: 'ffmpeg version 7.1 Copyright (c) 2000-2024 the FFmpeg developers',
   }
 }
 
@@ -167,6 +176,19 @@ test('C3 catches an undeclared instruction (a COPY nobody declared)', () => {
   fires(checkDockerfile(`${GOOD_DOCKERFILE}\nRUN echo hi\n`), 'C3')
 })
 
+test('C3 refuses any ffmpeg COPY but the declared one — floating tag, other digest, other destination', () => {
+  const declared = STATIC_FFMPEG_COPY_LINE
+  const floating = declared.replace(/@sha256:[0-9a-f]{64}/, ':7.1')
+  const otherDigest = declared.replace(/@sha256:[0-9a-f]{64}/, `@sha256:${'d'.repeat(64)}`)
+  const elsewhere = declared.replace(STATIC_FFMPEG.path, '/usr/bin/ffmpeg')
+  for (const mutant of [floating, otherDigest, elsewhere]) {
+    assert.notEqual(mutant, declared, 'mutation must actually change the line')
+    fires(checkDockerfile(GOOD_DOCKERFILE.replace(declared, mutant)), 'C3')
+  }
+  // Premise: the declared line itself is admitted — the healthy fixture carries it.
+  assert.deepEqual(checkDockerfile(GOOD_DOCKERFILE), [])
+})
+
 test('parseDockerfile joins continuations, so a hidden instruction cannot slip past', () => {
   const { logical } = parseDockerfile('FROM x \\\n  AS builder\nLABEL a="b"\n')
   assert.equal(logical.length, 2)
@@ -196,6 +218,12 @@ test('P2 catches a modified base layer and an undeclared added layer', () => {
   const extra = wrapperImage()
   extra.RootFS.Layers = [...extra.RootFS.Layers, 'sha256:new']
   fires(checkPassthrough(extra, baseImage()), 'P2')
+})
+
+test('P2 catches the declared ffmpeg layer going MISSING — zero added layers is now a failure', () => {
+  const bare = wrapperImage()
+  bare.RootFS.Layers = baseImage().RootFS.Layers // labels present, the declared layer absent
+  fires(checkPassthrough(bare, baseImage()), 'P2')
 })
 
 test('P3 union sweep catches a field NOBODY ENUMERATED — the check\'s own blind-spot guard', () => {
@@ -302,7 +330,7 @@ test('H_SCRIPTS catches a removed or added felddy file (exact key set)', () => {
 })
 
 test('H_PROBE treats a MISSING probe result as failure, never as a pass', () => {
-  for (const field of ['uid', 'gid', 'entrypointExecutable', 'overrideExit', 'pid1']) {
+  for (const field of ['uid', 'gid', 'entrypointExecutable', 'overrideExit', 'pid1', 'ffmpegVersion']) {
     const p = goodProbes()
     delete p[field]
     const problems = hc(wrapperImage(), p)
@@ -320,6 +348,17 @@ test('H_OVERRIDE catches core-server\'s verbatim entrypoint override failing', (
   const p = goodProbes()
   p.overrideExit = 127
   fires(hc(wrapperImage(), p), 'H_OVERRIDE')
+})
+
+test('H_FFMPEG catches a missing or broken ffmpeg — the one declared addition must actually run', () => {
+  // What docker prints when the COPY landed nothing runnable: not "ffmpeg version …".
+  const broken = goodProbes()
+  broken.ffmpegVersion = 'exec: "/usr/local/bin/ffmpeg": stat /usr/local/bin/ffmpeg: no such file or directory'
+  fires(hc(wrapperImage(), broken), 'H_FFMPEG')
+  // Premise: C3 and P2 are blind to this — the Dockerfile text and layer count are
+  // exactly as declared; only running the binary sees it.
+  assert.deepEqual(checkDockerfile(GOOD_DOCKERFILE), [])
+  assert.deepEqual(checkPassthrough(wrapperImage(), baseImage()), [])
 })
 
 test('H_VERSION catches a digest bump that silently moved the Foundry version', () => {
