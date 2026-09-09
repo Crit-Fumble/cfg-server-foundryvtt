@@ -32,7 +32,7 @@ import { CoreAPIClient } from './clients/api-client.js'
 import { CfgCampaignLinksDialog } from './views/cfg-campaign-links.js'
 import { FilePickerCompat } from './utils/file-picker-compat.js'
 import { registerCfgLinkMenu } from './views/cfg-link-settings.js'
-import { applyHostedContext, getHostKind } from './auth/host-context.js'
+import { applyHostedContext, getHostKind, resolveCoreEndpoint, readSeatKey } from './auth/host-context.js'
 import { mountConnectionBanner } from './views/connection-banner.js'
 import { maybeShowFirstRunPrompt } from './views/first-run-prompt.js'
 import { syncInstalledModules } from './sync/modules-sync.js'
@@ -382,11 +382,23 @@ Hooks.once('ready', async () => {
   // pair-flow having run. Idempotent: only writes on actual change, GM-only.
   try {
     if (isGM && onHostedPath) {
-      const detectedUrl = window.location.origin
+      // ⛔ Was `window.location.origin`. That is core ONLY while hosted Foundry is
+      // served from core itself; after cs#391 it is the Foundry host, and writing it
+      // here PERSISTS the wrong endpoint into world data — outliving the page and
+      // clobbering the correct value applyHostedContext just fetched from the server.
+      // Resolve instead, and never overwrite a server-DECLARED endpoint.
+      const resolved = resolveCoreEndpoint()
       const storedUrl = game.settings.get(MODULE_ID, 'coreApiUrl')
-      if (storedUrl !== detectedUrl) {
-        await game.settings.set(MODULE_ID, 'coreApiUrl', detectedUrl)
-        console.log(`CFG Core | coreApiUrl auto-corrected to ${detectedUrl} (was ${storedUrl})`)
+      if (resolved.declared) {
+        if (storedUrl !== resolved.endpoint) {
+          await game.settings.set(MODULE_ID, 'coreApiUrl', resolved.endpoint)
+          console.log(`CFG Core | coreApiUrl set from the platform-declared endpoint ${resolved.endpoint} (was ${storedUrl})`)
+        }
+      } else if (resolved.endpoint && storedUrl !== resolved.endpoint) {
+        // No declared endpoint (today's deployment): keep the old self-heal, which
+        // exists because a world can carry a stale prod URL in localdev/staging/tunnels.
+        await game.settings.set(MODULE_ID, 'coreApiUrl', resolved.endpoint)
+        console.log(`CFG Core | coreApiUrl auto-corrected to ${resolved.endpoint} (was ${storedUrl})`)
       }
 
       const detectedInstallId = _detectInstallationIdFromUrl()
@@ -432,12 +444,20 @@ Hooks.once('ready', async () => {
   // Prefer the same-origin URL on a cfg-hosted path so a non-GM player — who no
   // longer writes `coreApiUrl` above — still targets the right endpoint even if
   // the stored world setting is stale. Self-hosted falls back to the setting.
-  const apiUrl = (onHostedPath ? window.location.origin : null) || game.settings.get(MODULE_ID, 'coreApiUrl')
+  // Resolver, not `location.origin`: see resolveCoreEndpoint's docblock for the
+  // precedence. Identical result on today's same-origin deployment; correct on a
+  // moved Foundry host the moment the platform declares an endpoint.
+  const apiUrl = resolveCoreEndpoint().endpoint || game.settings.get(MODULE_ID, 'coreApiUrl')
   // Both hosting modes read the same stored key: cfg-hosted gets an installation
   // key from `applyHostedContext` (programmatic pairing) or, if that couldn't mint
   // one, an empty value → session-cookie auth (same-origin). Self-hosted gets its
   // paired key. An empty/absent setting → null → session-cookie auth.
-  const apiKey = game.settings.get(MODULE_ID, 'apiKey') || null
+  // Seat key first: it is per-browser, short-lived and scoped to THIS seat, whereas
+  // the `apiKey` world setting is the installation OWNER's key that every seated
+  // player can read (cs#390). Once the platform sends a seat key, prefer it — and
+  // it is the only credential a non-owner GM or player has once core is a different
+  // origin, where same-origin cookie auth stops working. Absent today → unchanged.
+  const apiKey = readSeatKey() || game.settings.get(MODULE_ID, 'apiKey') || null
 
   // apiKey set → Bearer token (installation key or self-hosted pair). Null →
   // same-origin session-cookie auth (cfg-hosted non-owner GM fallback).

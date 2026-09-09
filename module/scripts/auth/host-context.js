@@ -53,6 +53,103 @@ const MODULE_ID = 'crit-fumble-core'
 const CFG_HOSTED_PATH_PREFIX = '/servers/foundryvtt/'
 
 /**
+ * Cookie the platform sets on a cfg-hosted page to DECLARE where core lives and,
+ * for a GM seat, to hand this browser a scoped Bearer key. Both are absent today
+ * and the module falls back to its pre-3.1.0 behaviour when they are — this is
+ * forward-compatible plumbing, inert until cfg-core-server ships the cookies.
+ */
+const CORE_ENDPOINT_COOKIE = 'cfg_core_endpoint'
+const SEAT_KEY_COOKIE = 'cfg_foundry_seat_key'
+
+/** Read one cookie by name from document.cookie, or null. */
+function _cookie(name) {
+  if (typeof document === 'undefined' || typeof document.cookie !== 'string') return null
+  for (const part of document.cookie.split(';')) {
+    const eq = part.indexOf('=')
+    if (eq < 0) continue
+    if (part.slice(0, eq).trim() !== name) continue
+    try {
+      return decodeURIComponent(part.slice(eq + 1).trim()) || null
+    } catch {
+      return null
+    }
+  }
+  return null
+}
+
+/**
+ * The platform's own origin — which is NOT necessarily this page's origin.
+ *
+ * ⛔ Until cs#391 those were the same thing: hosted Foundry was served from
+ * core.crit-fumble.com itself, so `window.location.origin` WAS the core API. That
+ * coincidence is what the module encoded in several places, and it ends the moment
+ * hosted Foundry moves to its own host — where `location.origin` is the Foundry
+ * host and calling the API there 404s (and, worse, gets PERSISTED into the
+ * `coreApiUrl` world setting, so the mistake outlives the page).
+ *
+ * Precedence, and the order is deliberate:
+ *   1. injected `__CFG_HOSTED_CONTEXT__.endpoint` — the contracted channel.
+ *   2. the `cfg_core_endpoint` cookie — server-declared, authoritative, and the
+ *      only channel that reaches a NON-OWNER GM or a player (the hosted-context
+ *      endpoint is owner-scoped and 404s everyone else).
+ *   3. on a hosted path with neither of the above: `location.origin` — today's
+ *      behaviour, correct while Foundry is served from core, and deliberately
+ *      ABOVE the stored setting because that setting can hold a stale prod URL in
+ *      localdev/staging/tunnels (the reason the ready-hook auto-correct exists).
+ *   4. the stored `coreApiUrl` setting — the self-hosted case.
+ *
+ * So on today's deployment this returns exactly what the old code returned, and it
+ * switches to the declared endpoint the instant the platform starts sending one.
+ *
+ * @returns {{ endpoint: string|null, declared: boolean }} `declared` is true only
+ *   for 1 and 2 — the cases a GM auto-correct must not overwrite.
+ */
+export function resolveCoreEndpoint() {
+  const injected = getHostedContext()
+  if (injected && _isNonEmptyString(injected.endpoint)) return { endpoint: injected.endpoint, declared: true }
+
+  const fromCookie = _cookie(CORE_ENDPOINT_COOKIE)
+  if (_isNonEmptyString(fromCookie)) return { endpoint: fromCookie, declared: true }
+
+  if (isOnHostedPath()) {
+    const origin = _originOrNull()
+    if (origin) return { endpoint: origin, declared: false }
+  }
+
+  const stored = _storedSetting('coreApiUrl')
+  return { endpoint: _isNonEmptyString(stored) ? stored : null, declared: false }
+}
+
+/**
+ * The per-seat Bearer key the platform hands THIS browser, or null.
+ *
+ * Non-owner GMs and players have never had a Bearer credential — they authenticate
+ * to core by same-origin session cookie (api-client.js), which stops working the
+ * moment core is a different origin. This cookie is how they get one. Absent today.
+ */
+export function readSeatKey() {
+  return _cookie(SEAT_KEY_COOKIE)
+}
+
+/** True when this page is served under the cfg-hosted route prefix. */
+export function isOnHostedPath() {
+  return (
+    typeof window !== 'undefined' &&
+    typeof window.location?.pathname === 'string' &&
+    window.location.pathname.startsWith(CFG_HOSTED_PATH_PREFIX)
+  )
+}
+
+/** Read a module setting without throwing when Foundry is not ready. */
+function _storedSetting(key) {
+  try {
+    return globalThis.game?.settings?.get(MODULE_ID, key) ?? null
+  } catch {
+    return null
+  }
+}
+
+/**
  * @typedef {Object} HostedContext
  * @property {string} endpoint
  * @property {string} apiKey
@@ -171,7 +268,15 @@ export async function applyHostedContext() {
     if (res.ok) {
       const ctx = await res.json()
       if (ctx && _isNonEmptyString(ctx.apiKey)) {
-        await _setIfChanged('coreApiUrl', ctx.endpoint || origin)
+        // ⛔ NOT `ctx.endpoint || origin`: `origin` is this PAGE's origin, which is
+        // core only until cs#391 moves hosted Foundry to its own host. The server
+        // always sends `endpoint` (foundry-management.ts returns serverConfig.app.url),
+        // so a missing one is a contract break worth surfacing, not worth papering over.
+        if (_isNonEmptyString(ctx.endpoint)) {
+          await _setIfChanged('coreApiUrl', ctx.endpoint)
+        } else {
+          console.warn('CFG Core | hosted-context returned no endpoint; leaving coreApiUrl as-is')
+        }
         await _setIfChanged('apiKey', ctx.apiKey)
         await _setIfChanged('installationId', ctx.installationId || installationId)
         return 'cfg-hosted'

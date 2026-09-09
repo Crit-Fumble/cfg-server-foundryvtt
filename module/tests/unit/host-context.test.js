@@ -266,3 +266,84 @@ describe('getHostedContext', () => {
     expect(getHostedContext()).toBeNull()
   })
 })
+
+/**
+ * cs#391 — the core endpoint is no longer "this page's origin".
+ *
+ * Hosted Foundry is moving to its own host, so `window.location.origin` stops being
+ * the platform API. These pin the precedence, because the risk is asymmetric: get it
+ * wrong toward the page origin and the module calls the Foundry host for platform
+ * APIs and PERSISTS that into world data; get it wrong toward the stored setting and
+ * a stale prod URL breaks localdev. The order below is what satisfies both.
+ */
+describe('resolveCoreEndpoint', () => {
+  beforeEach(() => {
+    globalThis.window = globalThis.window || {}
+    delete globalThis.window.__CFG_HOSTED_CONTEXT__
+    globalThis.window.location = { pathname: '/servers/foundryvtt/inst-1/game', origin: 'https://foundryvtt.crit-fumble.com' }
+    globalThis.document = { cookie: '' }
+    settingsStore({})
+  })
+
+  it('prefers the injected context over everything', async () => {
+    globalThis.window.__CFG_HOSTED_CONTEXT__ = {
+      endpoint: 'https://core.crit-fumble.com',
+      apiKey: 'cfk_x',
+      installationId: 'inst-1',
+      cfgUserId: 'u1',
+    }
+    globalThis.document.cookie = 'cfg_core_endpoint=https://wrong.example'
+    const { resolveCoreEndpoint } = await loadHostContext()
+    expect(resolveCoreEndpoint()).toEqual({ endpoint: 'https://core.crit-fumble.com', declared: true })
+  })
+
+  it('uses the server-declared cookie — the only channel that reaches a player or non-owner GM', async () => {
+    globalThis.document.cookie = 'other=1; cfg_core_endpoint=https%3A%2F%2Fcore.crit-fumble.com; x=2'
+    const { resolveCoreEndpoint } = await loadHostContext()
+    // NOT the page origin, which is the Foundry host in this fixture.
+    expect(resolveCoreEndpoint()).toEqual({ endpoint: 'https://core.crit-fumble.com', declared: true })
+  })
+
+  it('falls back to the page origin on a hosted path when nothing is declared — today behavior', async () => {
+    const { resolveCoreEndpoint } = await loadHostContext()
+    expect(resolveCoreEndpoint()).toEqual({ endpoint: 'https://foundryvtt.crit-fumble.com', declared: false })
+  })
+
+  it('prefers the page origin OVER a stored setting on a hosted path, so a stale prod URL cannot win', async () => {
+    settingsStore({ coreApiUrl: 'https://stale-prod.example' })
+    const { resolveCoreEndpoint } = await loadHostContext()
+    expect(resolveCoreEndpoint().endpoint).toBe('https://foundryvtt.crit-fumble.com')
+  })
+
+  it('uses the stored setting when self-hosted (not on the hosted path)', async () => {
+    globalThis.window.location = { pathname: '/game', origin: 'https://foundry.local' }
+    settingsStore({ coreApiUrl: 'https://core.crit-fumble.com' })
+    const { resolveCoreEndpoint } = await loadHostContext()
+    expect(resolveCoreEndpoint()).toEqual({ endpoint: 'https://core.crit-fumble.com', declared: false })
+  })
+
+  it('reports declared:false for the fallbacks, so a GM auto-correct knows not to overwrite', async () => {
+    const { resolveCoreEndpoint } = await loadHostContext()
+    expect(resolveCoreEndpoint().declared).toBe(false)
+  })
+})
+
+describe('readSeatKey', () => {
+  beforeEach(() => {
+    globalThis.window = globalThis.window || {}
+    globalThis.window.location = { pathname: '/servers/foundryvtt/inst-1/game', origin: 'https://foundryvtt.crit-fumble.com' }
+    globalThis.document = { cookie: '' }
+    settingsStore({})
+  })
+
+  it('returns null when the platform sends no seat key — the state today', async () => {
+    const { readSeatKey } = await loadHostContext()
+    expect(readSeatKey()).toBeNull()
+  })
+
+  it('reads the per-seat key, which a player or non-owner GM has no other way to obtain', async () => {
+    globalThis.document.cookie = 'a=1; cfg_foundry_seat_key=cfk_seat_abc; b=2'
+    const { readSeatKey } = await loadHostContext()
+    expect(readSeatKey()).toBe('cfk_seat_abc')
+  })
+})
