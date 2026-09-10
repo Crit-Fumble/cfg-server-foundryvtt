@@ -382,6 +382,53 @@ function _staggerStart(label, fn) {
   }, delay)
 }
 
+/**
+ * Delete the orphan WORLD-scoped `apiKey` row left behind by module <= 3.1.0
+ * (cs#390). GM-only, idempotent, non-fatal.
+ *
+ * ⛔ WHY THE SCOPE CHANGE ALONE DID NOT CLOSE THE FINDING. Registering the
+ * setting as `scope: 'client'` in 3.2.0 stops the module READING the world row —
+ * it does not remove it. Foundry's own `ClientSettings#register` says so:
+ *
+ *     if ( data.scope !== CONST.SETTING_SCOPES.CLIENT ) {
+ *       this.storage.get("world").getSetting(data.id, userId)?.reset()
+ *     }
+ *
+ * client scope is precisely the branch that skips the world storage. So on every
+ * world paired under an older module the row survives, and Foundry ships every
+ * WORLD setting to every connecting client in the world data payload — which is
+ * the whole of the original finding, still live, for a module that now looks
+ * fixed. Measured on a production world after 3.2.0 shipped: the row was still
+ * there, holding a `cfk_`-shaped value.
+ *
+ * Deleting it is safe because 3.2.0 no longer reads it: the live key lives in
+ * this browser's localStorage under the client-scoped registration. A world row
+ * for this key can only be a leftover.
+ *
+ * Self-healing by design — this runs on every GM load, so a world reaches a
+ * clean state on its next relaunch with no operator step and no migration
+ * script, self-hosted worlds included.
+ */
+async function purgeLegacyWorldApiKey() {
+  // Deleting a Setting document requires GM; a player attempting it just logs a
+  // permission error, which is the noise the surrounding code already avoids.
+  if (game.user?.isGM !== true) return
+  try {
+    const world = game.settings?.storage?.get?.('world')
+    if (!world?.getSetting) return
+    // Second argument is the USER id for user-scoped rows; null is the
+    // world-scoped row, which is the only one this ever touches.
+    const doc = world.getSetting(`${MODULE_ID}.apiKey`, null)
+    if (!doc) return
+    await doc.delete()
+    console.log('CFG Core | removed the legacy world-scoped apiKey setting (cs#390)')
+  } catch (err) {
+    // Never break a world load over cleanup. The key it referenced is revoked
+    // server-side; a surviving row is untidy, not dangerous.
+    console.warn('CFG Core | could not remove the legacy world-scoped apiKey setting:', err?.message || err)
+  }
+}
+
 Hooks.once('ready', async () => {
   console.log(`CFG Core | Ready`)
 
@@ -396,6 +443,12 @@ Hooks.once('ready', async () => {
   const isGM = game.user?.isGM === true
   const onHostedPath =
     typeof window !== 'undefined' && window.location?.pathname?.startsWith('/servers/foundryvtt/') === true
+
+  // BEFORE anything else touches the key: drop the pre-3.2.0 world-scoped row.
+  // Ordering is deliberate — applyHostedContext() below writes the CLIENT-scoped
+  // key, and doing the purge first means a single load ends with exactly one
+  // copy of the credential, in the right place.
+  await purgeLegacyWorldApiKey()
 
   // Auto-correct `coreApiUrl` + `installationId` when running cfg-hosted
   // (proxied at `/servers/foundryvtt/{installationId}/*`). Existing worlds
