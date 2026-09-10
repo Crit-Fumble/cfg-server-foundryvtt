@@ -45,7 +45,11 @@ export function getCfgEndpoint() {
 }
 
 /**
- * Read the world-scoped API key minted by the pair flow.
+ * Read the client-scoped API key minted by the pair flow.
+ *
+ * Client-scoped since the fix for the world-scope leak (see the setting's
+ * registration in module.js): it lives in THIS browser's localStorage, so a
+ * self-hosted GM on another device pairs again there.
  * @returns {string|null}
  */
 export function getCfgApiKey() {

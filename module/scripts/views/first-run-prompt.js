@@ -8,7 +8,8 @@
  *
  * The prompt is intentionally narrow: it fires only when ALL of these hold:
  *   1. The current Foundry user is the GM. Players can't pair — the API key
- *      is world-scoped and minted under the GM's account.
+ *      is minted under the GM's account and stored client-scoped in their
+ *      own browser.
  *   2. The world is NOT cfg-hosted. A CFG-hosted Foundry container is any
  *      world served under the proxy route `/servers/foundryvtt/<id>/...` (or
  *      one that received the injected `window.__CFG_HOSTED_CONTEXT__`, #699):
