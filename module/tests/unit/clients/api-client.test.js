@@ -91,12 +91,34 @@ describe('constructor', () => {
 // ── Auth modes ────────────────────────────────────────────────────────────────
 
 describe('auth modes', () => {
-  test('core-hosted: uses credentials:include, no Authorization header', async () => {
+  // ── cs#391: the keyless fallback is decided by ORIGIN, not by host kind ─────
+  test('core-hosted SAME-ORIGIN: uses credentials:include, no Authorization header', async () => {
+    globalThis.window = { location: { origin: 'https://core.crit-fumble.com' } }
     const api = new CoreAPIClient('https://core.crit-fumble.com')
     await api.get('/api/test')
     const [, opts] = mockFetch.mock.calls[0]
     expect(opts.credentials).toBe('include')
     expect(opts.headers['Authorization']).toBeUndefined()
+  })
+
+  test('CROSS-ORIGIN and keyless: omits cookies rather than asking and being refused', async () => {
+    // Asking for cookies here is worse than sending nothing: core withholds
+    // Access-Control-Allow-Credentials for the Foundry origin on purpose, so the
+    // browser rejects the response before reading it and the caller cannot tell
+    // a refused request from a dead platform. Omitting earns an honest 401.
+    globalThis.window = { location: { origin: 'https://foundryvtt.crit-fumble.com' } }
+    const api = new CoreAPIClient('https://core.crit-fumble.com')
+    await api.get('/api/test')
+    const [, opts] = mockFetch.mock.calls[0]
+    expect(opts.credentials).toBeUndefined()
+    expect(opts.headers['Authorization']).toBeUndefined()
+  })
+
+  test('no window at all (node/tests): treated as cross-origin, cookies omitted', async () => {
+    delete globalThis.window
+    const api = new CoreAPIClient('https://core.crit-fumble.com')
+    await api.get('/api/test')
+    expect(mockFetch.mock.calls[0][1].credentials).toBeUndefined()
   })
 
   test('self-hosted: sends Bearer token, no credentials:include', async () => {
@@ -365,10 +387,20 @@ describe('getBinary', () => {
     expect(opts.headers['Accept']).toBe('image/webp,*/*')
   })
 
-  test('core-hosted still rides the session cookie', async () => {
+  test('core-hosted SAME-ORIGIN still rides the session cookie', async () => {
+    globalThis.window = { location: { origin: 'https://core.crit-fumble.com' } }
     mockFetch.mockResolvedValue(makeBinaryResponse(200, {}))
     await api.getBinary('/api/v1/pages/1.webp')
     expect(mockFetch.mock.calls[0][1].credentials).toBe('include')
+  })
+
+  test('the sourcebook shelf CROSS-ORIGIN omits cookies too', async () => {
+    // Six of the module's paths are the licensed-rulebook page stream. They are
+    // the most visible thing a player loses when the credential path is wrong.
+    globalThis.window = { location: { origin: 'https://foundryvtt.crit-fumble.com' } }
+    mockFetch.mockResolvedValue(makeBinaryResponse(200, {}))
+    await api.getBinary('/api/v1/pages/1.webp')
+    expect(mockFetch.mock.calls[0][1].credentials).toBeUndefined()
   })
 
   test('self-hosted sends the Bearer key', async () => {
