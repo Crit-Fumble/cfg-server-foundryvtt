@@ -79,31 +79,65 @@ describe('fetchCfg', () => {
   // #43 — a cfg-hosted Foundry is served same-origin with core, so the session
   // cookie is the auth. A stale stored API key (from a prior self-hosted pair)
   // must NOT ride along as a Bearer — that's what 401'd the plugin↔core calls.
-  it('cfg-hosted (proxy route): uses the session cookie and never sends the stored API key', async () => {
+  // ── cs#391: the branch is the ORIGIN, not the host kind ────────────────────
+  // These four replace two tests that asserted "cfg-hosted → cookie". That was
+  // right only while hosted Foundry was served FROM core; once it moved to its
+  // own host the cookie became unusable (core withholds
+  // Access-Control-Allow-Credentials for that origin, deliberately), and asking
+  // for it failed the preflight — so every hosted call reported a generic
+  // "offline" while the container sat healthy.
+
+  it('SAME-origin as core: the session cookie is the auth, no Bearer', async () => {
+    settingsStore({ coreApiUrl: 'https://core.crit-fumble.com', apiKey: 'cfk_secret' })
     globalThis.window.location = {
       origin: 'https://core.crit-fumble.com',
       pathname: '/servers/foundryvtt/abc123/game',
     }
     const { fetchCfg } = await loadPairFlow()
     await fetchCfg('/api/v1/account/user')
-    const [url, init] = fetch.mock.calls[0]
-    expect(url).toBe('https://cfg.test/api/v1/account/user')
+    const [, init] = fetch.mock.calls[0]
     expect(init.credentials).toBe('include')
     expect(init.headers.has('Authorization')).toBe(false)
   })
 
-  it('cfg-hosted (injected global): cookie auth — the injected key is not sent as Bearer', async () => {
-    globalThis.window.location = { origin: 'https://core.crit-fumble.com', pathname: '/game' }
-    globalThis.window.__CFG_HOSTED_CONTEXT__ = {
-      endpoint: 'https://core.crit-fumble.com',
-      apiKey: 'cfk_injected',
-      installationId: 'inst-1',
-      cfgUserId: 'user-1',
+  it('CROSS-origin (hosted on its own host): seat key as Bearer, cookies omitted', async () => {
+    settingsStore({ coreApiUrl: 'https://core.crit-fumble.com', apiKey: 'cfk_paired' })
+    globalThis.window.location = {
+      origin: 'https://foundryvtt.crit-fumble.com',
+      pathname: '/servers/foundryvtt/abc123/game',
     }
+    globalThis.document = { cookie: 'cfg_foundry_seat_key=cfk_seat_abc; other=1' }
     const { fetchCfg } = await loadPairFlow()
     await fetchCfg('/api/v1/account/user')
     const [, init] = fetch.mock.calls[0]
-    expect(init.credentials).toBe('include')
+    // Cookies MUST be omitted: asking for them is what the browser rejects.
+    expect(init.credentials).toBe('omit')
+    // Seat key wins over the paired key — per-browser and scoped to this seat.
+    expect(init.headers.get('Authorization')).toBe('Bearer cfk_seat_abc')
+  })
+
+  it('CROSS-origin with no seat key: falls back to the paired key', async () => {
+    settingsStore({ coreApiUrl: 'https://core.crit-fumble.com', apiKey: 'cfk_paired' })
+    globalThis.window.location = { origin: 'https://foundry.local', pathname: '/game' }
+    globalThis.document = { cookie: '' }
+    const { fetchCfg } = await loadPairFlow()
+    await fetchCfg('/api/v1/account/user')
+    const [, init] = fetch.mock.calls[0]
+    expect(init.credentials).toBe('omit')
+    expect(init.headers.get('Authorization')).toBe('Bearer cfk_paired')
+  })
+
+  it('CROSS-origin with no credential at all: unauthenticated, but still not a cookie request', async () => {
+    // A seated PLAYER on a hosted world. There is nothing to authenticate with,
+    // and that is fine — it earns an honest 401 the caller can report, rather
+    // than a preflight rejection that surfaces as "offline" and hides the cause.
+    settingsStore({ coreApiUrl: 'https://core.crit-fumble.com' })
+    globalThis.window.location = { origin: 'https://foundryvtt.crit-fumble.com', pathname: '/game' }
+    globalThis.document = { cookie: '' }
+    const { fetchCfg } = await loadPairFlow()
+    await fetchCfg('/api/v1/account/user')
+    const [, init] = fetch.mock.calls[0]
+    expect(init.credentials).toBe('omit')
     expect(init.headers.has('Authorization')).toBe(false)
   })
 })

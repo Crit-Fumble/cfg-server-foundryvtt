@@ -19,7 +19,7 @@
 'use strict'
 
 import { setConnectionStatus } from './connection-state.js'
-import { getHostKind } from './host-context.js'
+import { readSeatKey } from './host-context.js'
 
 const MODULE_ID = 'crit-fumble-core'
 const PAIR_PLATFORM = 'foundry'
@@ -52,6 +52,29 @@ export function getCfgEndpoint() {
  * self-hosted GM on another device pairs again there.
  * @returns {string|null}
  */
+/**
+ * Is the configured core endpoint this page's own origin?
+ *
+ * Decides cookie-vs-Bearer for every `fetchCfg` call. Defaults to FALSE (treat
+ * core as cross-origin) when it cannot tell, because that path sends an explicit
+ * Bearer and omits cookies — which is correct on a cross-origin host and merely
+ * unauthenticated on a same-origin one. The opposite default would re-create the
+ * cs#391 failure, where the request is rejected by the browser before the server
+ * ever sees it and every caller reports a generic "offline".
+ *
+ * @param {string} [endpoint] — defaults to the configured endpoint.
+ * @returns {boolean}
+ */
+export function _coreIsSameOrigin(endpoint) {
+  try {
+    const pageOrigin = globalThis.window?.location?.origin
+    if (!pageOrigin) return false
+    return new URL(endpoint ?? getCfgEndpoint(), pageOrigin).origin === pageOrigin
+  } catch {
+    return false
+  }
+}
+
 export function getCfgApiKey() {
   try {
     return game.settings.get(MODULE_ID, 'apiKey') || null
@@ -89,12 +112,28 @@ export function getCfgApiKey() {
  */
 export async function fetchCfg(path, init = {}) {
   const endpoint = getCfgEndpoint()
-  // cfg-hosted Foundry is served same-origin with core, so the same-origin
-  // session cookie is the auth — never the (possibly-stale) pair-flow API key.
-  // Reserve the Bearer key + the cookie-less `credentials: 'omit'` path for
-  // genuinely self-hosted installs, whose Foundry origin ≠ CFG origin. (#43)
-  const cfgHosted = getHostKind() === 'cfg-hosted'
-  const apiKey = cfgHosted ? null : getCfgApiKey()
+  // ⛔ THE TEST IS THE ORIGIN, NOT THE HOST KIND (cs#391).
+  //
+  // This used to branch on `getHostKind() === 'cfg-hosted'`, on the premise —
+  // stated in its own comment — that "cfg-hosted Foundry is served same-origin
+  // with core". cs#391 moved hosted worlds to their own host, and that premise
+  // died with it. A cfg-hosted world is now typically CROSS-origin, where the
+  // cookie is not merely unnecessary but actively fatal: core deliberately
+  // withholds `Access-Control-Allow-Credentials` for the Foundry origin (the
+  // whole point of the separation — a GM-installed module must not be able to
+  // spend a visitor's session), so `credentials: 'include'` makes the browser
+  // reject the response before any of it is read. Every fetchCfg caller on a
+  // hosted world failed its preflight.
+  //
+  // So ask the only question that actually decides it: is core THIS PAGE's
+  // origin? If yes, the cookie works and is the auth. If no, the cookie cannot
+  // work, and the only usable credential is a Bearer.
+  const sameOrigin = _coreIsSameOrigin(endpoint)
+  // Seat key first: per-browser, short-lived, scoped to THIS seat, and the only
+  // credential a non-owner GM has once core is a different origin. Falls back to
+  // the paired key for genuinely self-hosted installs. Same precedence as
+  // module.js's client construction, deliberately.
+  const apiKey = sameOrigin ? null : readSeatKey() || getCfgApiKey()
 
   const headers = new Headers(init.headers || {})
   // Strip caller-supplied auth — only this helper sets it.
@@ -115,10 +154,9 @@ export async function fetchCfg(path, init = {}) {
     response = await fetch(`${endpoint}${path}`, {
       ...init,
       headers,
-      // cfg-hosted: same-origin → send the session cookie (the auth). Self-hosted:
-      // Foundry origin ≠ CFG origin, cookies aren't usable, the Bearer key is the
-      // only auth — omit cookies so a foreign cookie can't ride along. (#43)
-      credentials: cfgHosted ? 'include' : 'omit',
+      // Same-origin: the cookie IS the auth. Cross-origin: omit it — it would
+      // not be honored, and asking for it fails the preflight outright.
+      credentials: sameOrigin ? 'include' : 'omit',
       signal: init.signal ?? controller.signal,
     })
   } catch (err) {
