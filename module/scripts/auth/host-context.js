@@ -260,6 +260,43 @@ export async function applyHostedContext() {
 
   const origin = _originOrNull()
   if (!origin) return 'cfg-hosted'
+
+  // ⛔ CROSS-ORIGIN THIS CALL CANNOT SUCCEED, SO DO NOT MAKE IT (cs#391).
+  //
+  // Three independent reasons, any one of which is fatal, and none of which a
+  // retry or a Bearer can get around:
+  //   1. it is fetched from THIS PAGE's origin, which on the Foundry host is not
+  //      core — Caddy 302s it to core and the browser re-runs CORS on the target;
+  //   2. `hosted-context` is session-only since 401c7ff — an API key is refused
+  //      there by design, because a credential must not be able to mint another;
+  //   3. the session cookie is refused from this origin twice over — CORS
+  //      withholds `Access-Control-Allow-Credentials`, and cookie-origin-trust
+  //      rejects it server-side even if a browser sent it.
+  //
+  // It failed loudly on every world load, and the `catch` below logged it as
+  // "non-fatal" — true, but it trained the console to show a CORS error as
+  // normal, which is exactly how a real one gets missed. The cookie path below
+  // (`cfg_core_endpoint` + `cfg_foundry_seat_key`) is what serves this origin,
+  // and unlike this endpoint it reaches non-owner GMs and players too.
+  // `resolveCoreEndpoint` always yields something on a hosted path — it falls
+  // back to `location.origin` — so there is no "nothing declared" branch to
+  // guard here; a null or malformed value lands in the catch, which defaults to
+  // SAME-origin, i.e. today's behaviour. Defaulting the other way would silently
+  // disable this call on a same-origin install.
+  const { endpoint: declaredEndpoint } = resolveCoreEndpoint()
+  let coreIsThisOrigin
+  try {
+    coreIsThisOrigin = new URL(declaredEndpoint, origin).origin === origin
+  } catch {
+    coreIsThisOrigin = true
+  }
+  if (!coreIsThisOrigin) {
+    // Not a warning: this is the expected, correct path on a separated origin.
+    console.debug('CFG Core | core is a different origin — using the declared endpoint + seat key, not hosted-context')
+    await _setIfChanged('apiKey', '')
+    return 'cfg-hosted'
+  }
+
   try {
     const res = await fetch(
       `${origin}/api/v1/account/foundry/hosted-context?installationId=${encodeURIComponent(installationId)}`,

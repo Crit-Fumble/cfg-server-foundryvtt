@@ -347,3 +347,94 @@ describe('readSeatKey', () => {
     expect(readSeatKey()).toBe('cfk_seat_abc')
   })
 })
+
+// ── cs#391: hosted-context is a SAME-ORIGIN-only call ─────────────────────────
+// It fetched from this PAGE's origin with `credentials: 'include'`. Once hosted
+// Foundry moved to its own host that request could not succeed for three
+// independent reasons — it 302s to core and re-runs CORS on the target, the
+// endpoint is session-only since 401c7ff, and the cookie is refused from that
+// origin both by CORS and by cookie-origin-trust. It failed on EVERY world load
+// and was logged as "non-fatal", which trained the console to treat a CORS error
+// as normal. That is how a real one gets missed.
+describe('applyHostedContext — cross-origin core (cs#391)', () => {
+  let store
+
+  beforeEach(() => {
+    globalThis.window = globalThis.window || {}
+    delete globalThis.window.__CFG_HOSTED_CONTEXT__
+    globalThis.document = { cookie: '' }
+    globalThis.fetch = jest.fn()
+    store = settingsStore({ coreApiUrl: 'https://core.crit-fumble.com', apiKey: 'cfk_stale', installationId: '' })
+  })
+
+  it('does NOT fetch hosted-context when core is a different origin', async () => {
+    // The live shape: page on the Foundry host, core declared elsewhere.
+    globalThis.window.location = {
+      pathname: '/servers/foundryvtt/rotfs/game',
+      origin: 'https://foundryvtt.crit-fumble.com',
+    }
+    globalThis.document = { cookie: 'cfg_core_endpoint=https://core.crit-fumble.com' }
+
+    const { applyHostedContext } = await loadHostContext()
+    const kind = await applyHostedContext()
+
+    expect(kind).toBe('cfg-hosted')
+    // The whole point — no request is made at all.
+    expect(globalThis.fetch).not.toHaveBeenCalled()
+    // And the stale owner key is cleared, so nothing sends a dead Bearer.
+    expect(store.get('apiKey')).toBe('')
+  })
+
+  it('DOES fetch when core is this page\'s own origin — the same-origin path is unchanged', async () => {
+    globalThis.window.location = {
+      pathname: '/servers/foundryvtt/rotfs/game',
+      origin: 'https://core.crit-fumble.com',
+    }
+    globalThis.document = { cookie: 'cfg_core_endpoint=https://core.crit-fumble.com' }
+    globalThis.fetch = jest.fn(async () => ({
+      ok: true,
+      json: async () => ({
+        endpoint: 'https://core.crit-fumble.com',
+        apiKey: 'cfk_minted',
+        installationId: 'inst_abc',
+      }),
+    }))
+
+    const { applyHostedContext } = await loadHostContext()
+    await applyHostedContext()
+
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1)
+    expect(store.get('apiKey')).toBe('cfk_minted')
+  })
+
+  it('with nothing declared, keeps today\'s same-origin behaviour rather than guessing', async () => {
+    // No endpoint cookie, no injected global: the guard must not invent a
+    // cross-origin verdict and silently stop working on a same-origin install.
+    globalThis.window.location = {
+      pathname: '/servers/foundryvtt/rotfs/game',
+      origin: 'https://core.crit-fumble.com',
+    }
+    globalThis.document = { cookie: '' }
+    globalThis.fetch = jest.fn(async () => ({ ok: false, json: async () => ({}) }))
+
+    const { applyHostedContext } = await loadHostContext()
+    await applyHostedContext()
+
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1)
+  })
+
+  it('an OPAQUE origin falls back to same-origin rather than disabling the call', async () => {
+    // A sandboxed iframe reports `location.origin === 'null'` (the string), and
+    // `new URL(x, 'null')` throws. The catch must default to SAME-origin: that
+    // preserves today's behaviour, where defaulting the other way would silently
+    // switch off hosted-context for anyone embedding Foundry in a frame.
+    globalThis.window.location = { pathname: '/servers/foundryvtt/rotfs/game', origin: 'null' }
+    globalThis.document = { cookie: 'cfg_core_endpoint=https://core.crit-fumble.com' }
+    globalThis.fetch = jest.fn(async () => ({ ok: false, json: async () => ({}) }))
+
+    const { applyHostedContext } = await loadHostContext()
+    await applyHostedContext()
+
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1)
+  })
+})
