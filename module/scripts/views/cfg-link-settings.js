@@ -307,6 +307,6 @@ export function registerCfgLinkMenu() {
     hint: 'Link this Foundry world to a Crit-Fumble account using a one-time browser code.',
     icon: 'fas fa-link',
     type: CfgLinkSettings,
-    restricted: true, // GM only — the API key is world-scoped.
+    restricted: true, // GM only — pairing mints a key under the GM's own account.
   })
 }

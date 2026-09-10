@@ -252,11 +252,35 @@ Hooks.once('init', () => {
 
   // Set automatically by the pair flow (#698). Hidden from the settings UI
   // so users can't paste in arbitrary strings; clear it via Unlink instead.
-  // World-scope keeps the key with the same protection as other GM secrets
-  // stored in Foundry's settings.db (Foundry has no built-in encryption for
-  // module settings — see the #698 issue body).
+  //
+  // ⛔ CLIENT SCOPE IS LOAD-BEARING — DO NOT CHANGE IT BACK TO 'world'.
+  // This setting previously used `scope: 'world'`, justified by a comment
+  // claiming world-scope gave the key "the same protection as other GM
+  // secrets". That reasoning conflated two different things: `config: false`
+  // hides the settings-UI field, but a WORLD setting is world state and
+  // Foundry distributes it to connected clients. A per-account credential is
+  // not world state and does not belong in one.
+  //
+  // 'client' stores it in that browser's localStorage, so it stays with the
+  // account it was issued to. The couriers (compendium mirror, actor
+  // write-back, scene/macro sync) all run in a connected GM's own tab and
+  // read it from there, so they are unaffected.
+  //
+  // ⚠️ Consequence for SELF-HOSTED worlds, stated because it is a real cost
+  // and not a bug report: the pair flow writes this key once, and client
+  // scope means it does not follow a GM to another browser or device — they
+  // pair again there. cfg-hosted worlds pay nothing, because
+  // applyHostedContext() re-fetches the key from core on every load.
+  //
+  // Foundry v14 also offers `scope: 'user'` (per-user, stored server-side),
+  // which would keep persistence AND privacy. It is NOT used here: the
+  // Setting document declares create/update/delete permissions and no READ
+  // rule, so whether the server withholds another user's user-scoped setting
+  // from a connecting client is not answerable from the client source — and
+  // this module declares a v13 minimum. Adopting it needs that measured on a
+  // real world first; 'client' is provably safe today.
   game.settings.register(MODULE_ID, 'apiKey', {
-    scope: 'world',
+    scope: 'client',
     config: false,
     type: String,
     default: '',
@@ -705,7 +729,7 @@ Hooks.once('ready', async () => {
  * idempotent on the server side (repeated POSTs for the same world just
  * refresh `loadedAt`).
  *
- * Auth: the world-scoped `apiKey` (set by the pair flow on self-hosted,
+ * Auth: the client-scoped `apiKey` (set by the pair flow on self-hosted,
  * by `applyHostedContext` on cfg-hosted) goes in as a Bearer token. When
  * absent we let the request through with whatever auth the iframe /
  * session cookie provides — the platform falls back to session-cookie
@@ -819,7 +843,7 @@ async function _resolveFeatureMode() {
  * Auth source:
  *   - cfg-hosted Foundry: the same-origin session cookie identifies the
  *     caller automatically (no apiKey on the request).
- *   - Self-hosted Foundry: the world-scoped apiKey set by the pair flow
+ *   - Self-hosted Foundry: the client-scoped apiKey set by the pair flow
  *     (Module Settings → Crit-Fumble Link). When absent, the call is
  *     anonymous and silently no-ops.
  *
