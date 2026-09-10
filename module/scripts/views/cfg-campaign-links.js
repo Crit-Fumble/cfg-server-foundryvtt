@@ -18,6 +18,8 @@
  *   DELETE /api/v1/account/foundry/campaigns/:campaignId/worlds/:linkId
  */
 
+import { fetchCfg } from '../auth/pair-flow.js'
+
 const MODULE_ID = 'crit-fumble-core'
 
 export class CfgCampaignLinksDialog extends foundry.applications.api.ApplicationV2 {
@@ -63,14 +65,14 @@ export class CfgCampaignLinksDialog extends foundry.applications.api.Application
     this.errorMessage = null
     this.installationId = this._getInstallationId()
 
-    const apiUrl = game.settings.get(MODULE_ID, 'coreApiUrl')
     try {
-      const res = await fetch(`${apiUrl.replace(/\/+$/, '')}/api/v1/account/foundry/campaigns`, {
-        credentials: 'include',
-      })
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      const payload = await res.json()
-      this.campaigns = Array.isArray(payload?.data) ? payload.data : []
+      // Through fetchCfg, not a raw fetch: it is the one place that decides
+      // cookie-vs-Bearer from the ORIGIN. A raw `credentials: 'include'` here is
+      // rejected by the browser on a separated Foundry host (cs#391), and three
+      // call sites each re-deciding that is how the fix got missed the first time.
+      const res = await fetchCfg('/api/v1/account/foundry/campaigns')
+      if (!res.ok) throw new Error(res.status ? `HTTP ${res.status}` : res.reason)
+      this.campaigns = Array.isArray(res.data?.data) ? res.data.data : []
     } catch (err) {
       this.errorMessage = `Couldn't load campaigns: ${err?.message ?? err}`
       this.campaigns = []
@@ -240,25 +242,22 @@ export class CfgCampaignLinksDialog extends foundry.applications.api.Application
 
     button.disabled = true
     button.style.opacity = '0.6'
-    const apiUrl = game.settings.get(MODULE_ID, 'coreApiUrl').replace(/\/+$/, '')
     const worldId = game.world?.id
     try {
       // Run additions + removals in parallel; report aggregated success/failure.
       const results = await Promise.allSettled([
         ...toAdd.map((a) =>
-          fetch(`${apiUrl}/api/v1/account/foundry/campaigns/${encodeURIComponent(a.campaignId)}/worlds`, {
+          fetchCfg(`/api/v1/account/foundry/campaigns/${encodeURIComponent(a.campaignId)}/worlds`, {
             method: 'POST',
-            credentials: 'include',
-            headers: { 'content-type': 'application/json' },
             body: JSON.stringify({ installationId: this.installationId, worldId }),
           }),
         ),
         ...toRemove
           .filter((r) => r.linkId)
           .map((r) =>
-            fetch(
-              `${apiUrl}/api/v1/account/foundry/campaigns/${encodeURIComponent(r.campaignId)}/worlds/${encodeURIComponent(r.linkId)}`,
-              { method: 'DELETE', credentials: 'include' },
+            fetchCfg(
+              `/api/v1/account/foundry/campaigns/${encodeURIComponent(r.campaignId)}/worlds/${encodeURIComponent(r.linkId)}`,
+              { method: 'DELETE' },
             ),
           ),
       ])
