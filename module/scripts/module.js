@@ -798,7 +798,13 @@ async function _reportWorldLoaded(apiKey) {
   const res = await fetch(url, {
     method: 'POST',
     headers,
-    credentials: 'include',
+    // ⛔ Sending a Bearer AND asking for cookies is self-defeating cross-origin
+    // (cs#391): core withholds `Access-Control-Allow-Credentials` for the
+    // Foundry origin, so `credentials: 'include'` makes the browser reject the
+    // response even though the Bearer alone would have authenticated it. Same
+    // rule the API client already follows — a key means cookies are neither
+    // needed nor allowed to ride along.
+    ...(apiKey ? {} : { credentials: 'include' }),
     // pluginVersion rides the heartbeat so the platform's fleet report
     // (dt#268/dt#183) knows what each world actually RUNS — the installed
     // files on disk are not evidence of the running version.
