@@ -44,6 +44,27 @@ export class CoreAPIClient {
    * @param {RequestInit & { timeout?: number; retries?: number }} options
    * @returns {Promise<Response>}
    */
+  /**
+   * Is the configured core endpoint this page's own origin?
+   *
+   * Defaults to FALSE (treat core as cross-origin) when it cannot tell, because
+   * that path omits cookies — correct on a separated host, and merely
+   * unauthenticated on a same-origin one. Defaulting the other way re-creates
+   * the failure this exists to remove, where the browser rejects the response
+   * and every caller reports a generic "offline".
+   *
+   * @returns {boolean}
+   */
+  _coreIsSameOrigin() {
+    try {
+      const pageOrigin = globalThis.window?.location?.origin
+      if (!pageOrigin) return false
+      return new URL(this.baseUrl, pageOrigin).origin === pageOrigin
+    } catch {
+      return false
+    }
+  }
+
   async _request(endpoint, options = {}) {
     const url = `${this.baseUrl}${endpoint}`
     const timeout = options.timeout ?? DEFAULT_TIMEOUT
@@ -64,6 +85,22 @@ export class CoreAPIClient {
       headers['Authorization'] = `Bearer ${this.apiKey}`
     }
 
+    // ⛔ ASKING FOR COOKIES CROSS-ORIGIN IS WORSE THAN SENDING NOTHING (cs#391).
+    //
+    // The keyless fallback below used to be an unconditional
+    // `credentials: 'include'`, on the premise that a cfg-hosted world is
+    // same-origin with core. It is not, since hosted worlds moved to their own
+    // host: core withholds `Access-Control-Allow-Credentials` for that origin
+    // deliberately, so the browser REJECTS THE RESPONSE BEFORE READING IT and
+    // the caller cannot tell a refused request from a dead platform — both
+    // surface as a network failure.
+    //
+    // Omitting them instead means an unauthenticated call earns an honest 401,
+    // which the caller can report. It does not make the call succeed; a
+    // credential is what does that, and since cs#392 stage 1 a seated player
+    // gets one. This is the half that stops the failure being INVISIBLE.
+    const sameOrigin = this._coreIsSameOrigin()
+
     let lastErr
     for (let attempt = 1; attempt <= retries; attempt++) {
       const controller = new AbortController()
@@ -72,7 +109,7 @@ export class CoreAPIClient {
         const res = await fetch(url, {
           ...fetchOpts,
           headers,
-          ...(this.apiKey ? {} : { credentials: 'include' }),
+          ...(this.apiKey || !sameOrigin ? {} : { credentials: 'include' }),
           signal: controller.signal,
         })
         clearTimeout(timerId)
