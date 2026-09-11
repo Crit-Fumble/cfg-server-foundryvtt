@@ -58,12 +58,29 @@
  *   'SCOPE_REQUIRED'              — `requireScope` / `requireScopeIfApiKey` in
  *                                   `src/routes/v1/_lib/auth.ts`; the body is
  *                                   `{ error: 'Scope required: <scope>', code, scope }`
- *   'INSTALLATION_OWNER_REQUIRED' — `POST /api/v1/foundry/modules` and its
- *                                   system-schema twin, for a key bound to an
- *                                   installation the caller does not own; the
- *                                   body is `{ error, code }` with no `scope`
- * The unit tests carry those bodies verbatim, so a change on either side has a
- * named counterpart. A core server that predates the codes answers
+ *   'INSTALLATION_OWNER_REQUIRED' — ⚠️ NO LONGER EMITTED by the live core server.
+ *                                   It came from `POST /api/v1/foundry/modules`
+ *                                   and its system-schema twin, for a key bound
+ *                                   to an installation the caller does not own;
+ *                                   the body was `{ error, code }` with no
+ *                                   `scope`. Core `ddd280a` (v1.213.0) made a
+ *                                   seat key authorized by its BINDING rather
+ *                                   than by ownership, which deleted both
+ *                                   emission sites. Verified against the tag:
+ *                                   zero sends, the string surviving only in
+ *                                   comments, positive-controlled against
+ *                                   'SCOPE_REQUIRED' (3 sends).
+ *                                   RETAINED anyway, deliberately — v1.212.0
+ *                                   DID emit it, installed copies of this module
+ *                                   are long-lived, and one meeting an older
+ *                                   core must still read it as a rights problem
+ *                                   rather than a dead key.
+ * The unit tests carry those bodies verbatim. ⚠️ Do not read that as proof the
+ * deployed server can still produce them: the coupling held in only one
+ * direction. `ddd280a` changed the server and this list did not follow, which is
+ * exactly how the stale claim above survived its own review. Check a code against
+ * the DEPLOYED tag, never against these fixtures — they are mocked, so they stay
+ * green whatever the server does. A core server that predates the codes answers
  * `code: 'FORBIDDEN'` for the same conditions, and this module then reads it as
  * `auth-failed` exactly as 3.2.4 did — the two halves ship independently, and
  * this side is safe in either order.
