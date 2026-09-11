@@ -206,30 +206,41 @@ describe('error handling', () => {
   // or an ownership right. The server's message is written for the user, so it
   // is relayed as-is — and it must not point at re-pairing or regenerating a
   // key, which would mint one with the same rights.
+  // Every 403 body below is VERBATIM what cfg-core-server sends (file named on
+  // each), so a change to either side has a counterpart to update.
   test('403 with code SCOPE_REQUIRED relays the server message, not the generic one', async () => {
     const api = new CoreAPIClient('https://core.crit-fumble.com', 'cfk_alive')
+    // cfg-core-server src/routes/v1/_lib/auth.ts, requireScope / requireScopeIfApiKey
     mockFetch.mockResolvedValueOnce(
-      makeResponse(403, { error: 'Scope required: foundry:modules', code: 'SCOPE_REQUIRED', scope: 'foundry:modules' }),
+      makeResponse(403, { error: 'Scope required: foundry:write', code: 'SCOPE_REQUIRED', scope: 'foundry:write' }),
     )
     const err = await api.get('/api/test').catch((e) => e)
     expect(err).toBeInstanceOf(Error)
-    expect(err.message).toBe('Scope required: foundry:modules')
+    expect(err.message).toBe('Scope required: foundry:write')
     expect(err.code).toBe('SCOPE_REQUIRED')
     expect(err.message).not.toMatch(/permission|regenerate|pair|expired/i)
   })
 
   test('403 with code INSTALLATION_OWNER_REQUIRED relays the server message', async () => {
     const api = new CoreAPIClient('https://core.crit-fumble.com')
+    // cfg-core-server src/routes/v1/account/foundry-installed-modules.ts (+ the
+    // foundry-system-schema.ts twin), key bound to an installation the caller does not own
     mockFetch.mockResolvedValueOnce(
-      makeResponse(403, { error: 'Only the installation owner can do this', code: 'INSTALLATION_OWNER_REQUIRED' }),
+      makeResponse(403, {
+        error: 'Installation-level sync is owner-only — this key is bound to an installation you do not own',
+        code: 'INSTALLATION_OWNER_REQUIRED',
+      }),
     )
     const err = await api.get('/api/test').catch((e) => e)
-    expect(err.message).toBe('Only the installation owner can do this')
+    expect(err.message).toBe('Installation-level sync is owner-only — this key is bound to an installation you do not own')
     expect(err.code).toBe('INSTALLATION_OWNER_REQUIRED')
+    // The server pins the same property on its side: the copy never says re-pair.
+    expect(err.message).not.toMatch(/re-pair|regenerate/i)
   })
 
   test('403 with code FORBIDDEN keeps the generic permission message', async () => {
     const api = new CoreAPIClient('https://core.crit-fumble.com')
+    // cfg-core-server src/routes/v1/_lib/auth.ts, requireAdmin
     mockFetch.mockResolvedValueOnce(makeResponse(403, { error: 'Admin access required', code: 'FORBIDDEN' }))
     const err = await api.get('/api/test').catch((e) => e)
     expect(err.message).toBe('You do not have permission for this action.')

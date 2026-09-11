@@ -47,6 +47,20 @@
  * directions: the key is not dead, and pairing again mints a key with the same
  * rights. Any other 403 — no JSON body, no `code`, or a code outside this list —
  * keeps its pre-3.2.5 meaning, indistinguishable from a dead credential.
+ *
+ * This list MIRRORS the core server, which is the source of truth for it:
+ *   'SCOPE_REQUIRED'              — `requireScope` / `requireScopeIfApiKey` in
+ *                                   `src/routes/v1/_lib/auth.ts`; the body is
+ *                                   `{ error: 'Scope required: <scope>', code, scope }`
+ *   'INSTALLATION_OWNER_REQUIRED' — `POST /api/v1/foundry/modules` and its
+ *                                   system-schema twin, for a key bound to an
+ *                                   installation the caller does not own; the
+ *                                   body is `{ error, code }` with no `scope`
+ * The unit tests carry those bodies verbatim, so a change on either side has a
+ * named counterpart. A core server that predates the codes answers
+ * `code: 'FORBIDDEN'` for the same conditions, and this module then reads it as
+ * `auth-failed` exactly as 3.2.4 did — the two halves ship independently, and
+ * this side is safe in either order.
  */
 export const FORBIDDEN_CODES = Object.freeze(['SCOPE_REQUIRED', 'INSTALLATION_OWNER_REQUIRED'])
 

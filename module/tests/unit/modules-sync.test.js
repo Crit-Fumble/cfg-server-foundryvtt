@@ -181,11 +181,12 @@ describe('syncInstalledModules', () => {
   })
 
   it("returns reason 'forbidden' on a 403 with a rights code — alive key, missing scope, still not thrown", async () => {
+    // Body verbatim from cfg-core-server src/routes/v1/_lib/auth.ts (requireScope).
     globalThis.fetch = jest.fn(async () => ({
       ok: false,
       status: 403,
-      json: async () => ({ error: 'Scope required: foundry:modules', code: 'SCOPE_REQUIRED', scope: 'foundry:modules' }),
-      text: async () => '{"error":"Scope required: foundry:modules","code":"SCOPE_REQUIRED","scope":"foundry:modules"}',
+      json: async () => ({ error: 'Scope required: foundry:write', code: 'SCOPE_REQUIRED', scope: 'foundry:write' }),
+      text: async () => '{"error":"Scope required: foundry:write","code":"SCOPE_REQUIRED","scope":"foundry:write"}',
     }))
 
     const { syncInstalledModules } = await loadModulesSync()

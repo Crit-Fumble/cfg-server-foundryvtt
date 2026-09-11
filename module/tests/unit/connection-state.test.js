@@ -166,11 +166,16 @@ describe('fetchCfg — typed result + connection-state side effects', () => {
   // ownership right — pairing again would mint a key with the same rights, so
   // this must not read as "re-pair required". Without one it keeps meaning
   // what it always did.
+  //
+  // Every 403 body below is VERBATIM what cfg-core-server sends — the file is
+  // named on each — so a change to either side has a counterpart to update.
   it("returns { ok: false, reason: 'forbidden', code, scope } on a 403 with code SCOPE_REQUIRED", async () => {
+    // cfg-core-server src/routes/v1/_lib/auth.ts, requireScope / requireScopeIfApiKey:
+    //   { error: `Scope required: ${scope}`, code: 'SCOPE_REQUIRED', scope }
     globalThis.fetch = jest.fn(async () => ({
       ok: false,
       status: 403,
-      text: async () => '{"error":"Scope required: foundry:modules","code":"SCOPE_REQUIRED","scope":"foundry:modules"}',
+      text: async () => '{"error":"Scope required: foundry:write","code":"SCOPE_REQUIRED","scope":"foundry:write"}',
     }))
 
     const { fetchCfg } = await loadPairFlow()
@@ -182,17 +187,22 @@ describe('fetchCfg — typed result + connection-state side effects', () => {
       reason: 'forbidden',
       status: 403,
       code: 'SCOPE_REQUIRED',
-      scope: 'foundry:modules',
-      body: { error: 'Scope required: foundry:modules', code: 'SCOPE_REQUIRED', scope: 'foundry:modules' },
+      scope: 'foundry:write',
+      body: { error: 'Scope required: foundry:write', code: 'SCOPE_REQUIRED', scope: 'foundry:write' },
     })
     expect(getConnectionState()).toMatchObject({ status: 'forbidden', lastStatusCode: 403 })
   })
 
   it("returns { ok: false, reason: 'forbidden', code } on a 403 with code INSTALLATION_OWNER_REQUIRED", async () => {
+    // cfg-core-server src/routes/v1/account/foundry-installed-modules.ts (and its
+    // foundry-system-schema.ts twin), key bound to an installation the caller does not own:
+    //   { error: 'Installation-level sync is owner-only — this key is bound to an installation you do not own', code: 'INSTALLATION_OWNER_REQUIRED' }
+    // No `scope` field — the right that is missing is ownership, not a scope.
     globalThis.fetch = jest.fn(async () => ({
       ok: false,
       status: 403,
-      text: async () => '{"error":"Only the installation owner can do this","code":"INSTALLATION_OWNER_REQUIRED"}',
+      text: async () =>
+        '{"error":"Installation-level sync is owner-only — this key is bound to an installation you do not own","code":"INSTALLATION_OWNER_REQUIRED"}',
     }))
 
     const { fetchCfg } = await loadPairFlow()
@@ -204,16 +214,20 @@ describe('fetchCfg — typed result + connection-state side effects', () => {
     expect(getConnectionState().status).toBe('forbidden')
   })
 
-  it("keeps a 403 with code FORBIDDEN as 'auth-failed' — not a rights code, no new meaning", async () => {
+  it("keeps a 403 with code FORBIDDEN as 'auth-failed' — an unbound key really does need a re-pair", async () => {
+    // cfg-core-server src/routes/v1/account/foundry-installed-modules.ts, key NOT bound to
+    // any installation — the one 403 on this route where re-pairing is the right advice:
+    //   { error: 'API key is not bound to a Foundry installation — re-pair the plugin', code: 'FORBIDDEN' }
     globalThis.fetch = jest.fn(async () => ({
       ok: false,
       status: 403,
-      text: async () => '{"error":"Admin access required","code":"FORBIDDEN"}',
+      text: async () =>
+        '{"error":"API key is not bound to a Foundry installation — re-pair the plugin","code":"FORBIDDEN"}',
     }))
 
     const { fetchCfg } = await loadPairFlow()
     const { getConnectionState } = await import('../../scripts/auth/connection-state.js')
-    const res = await fetchCfg('/api/v1/admin/anything')
+    const res = await fetchCfg('/api/v1/foundry/modules', { method: 'POST', body: '{}' })
 
     expect(res).toMatchObject({ ok: false, reason: 'auth-failed', status: 403 })
     expect(res.code).toBeUndefined()
