@@ -164,15 +164,18 @@ const SERVER_403_CODES = {
   },
 
   NOT_GM: {
-    handling: 'rights-unhandled',
+    handling: 'rights',
     emitted: true,
     why:
-      '⚠️ KNOWN GAP, surfaced by this test. resolveCourierWorld (src/routes/v1/_lib/courier-auth.ts) sends ' +
-      'it to every /installations/:id/foundry/*-sync courier when the caller is not a world GM — routes ' +
-      'this module polls on a timer — plus six /account/game-world-* routes. Semantically a rights code: ' +
-      'the key is alive, the world-GM seat is missing, and re-pairing cannot grant a seat. It is NOT in ' +
-      'FORBIDDEN_CODES today, so a courier tick from a non-GM reads as auth-failed. Promoting it changes ' +
-      'module BEHAVIOUR and belongs in its own commit; this row keeps it from going quiet meanwhile.',
+      'resolveCourierWorld (src/routes/v1/_lib/courier-auth.ts:146) sends it to every ' +
+      '/installations/:id/foundry/*-sync courier when the caller is not a world GM — routes this module ' +
+      'polls on a timer — plus six /account/game-world-* routes. The key is alive and the world-GM seat ' +
+      'is missing; re-pairing cannot grant a seat, so a re-pair is the wrong response. ' +
+      '⚠️ This row was born as a KNOWN GAP: the test derived the server code set, found NOT_GM absent ' +
+      'from FORBIDDEN_CODES, and printed it every run until it was promoted (2026-09-11). Recorded ' +
+      'because it is the evidence this guard works — it caught a live instance of the failure the PR ' +
+      'that introduced it was written to fix. Body is { error: "Forbidden", code } — the text is the ' +
+      'bare word, so the CODE carries the whole signal and there is no prose worth relaying.',
   },
 
   INSTALLATION_MISMATCH: {

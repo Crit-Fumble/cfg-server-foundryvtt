@@ -83,6 +83,21 @@
  *                                   are long-lived, and one meeting an older
  *                                   core must still read it as a rights problem
  *                                   rather than a dead key.
+ *   'NOT_GM'                     — `resolveWorldGm` refused: the caller is not a GM of
+ *                                   that world. `_lib/courier-auth.ts:146`, which backs the
+ *                                   ELEVEN `/installations/:id/foundry/*-sync` courier routes
+ *                                   this module polls on a timer, plus six
+ *                                   `/account/game-world-*` routes. Body is
+ *                                   `{ error: 'Forbidden', code }` — note the text is the bare
+ *                                   word, not prose, so there is nothing useful to relay to a
+ *                                   user from it; the CODE is the whole signal.
+ *                                   ⚠️ Added 2026-09-11, after `server-403-code-inventory.test.js`
+ *                                   derived the server's real code set and found this one
+ *                                   missing. It had been reading as a dead credential on the
+ *                                   module's highest-traffic routes — the precise failure this
+ *                                   list exists to prevent, sitting inside the fix for it. A GM
+ *                                   seat is not a scope: re-pairing cannot grant one, so a
+ *                                   re-pair is exactly the wrong response.
  * The unit tests carry those bodies verbatim. ⚠️ Do not read that as proof the
  * deployed server can still produce them: the coupling held in only one
  * direction. `ddd280a` changed the server and this list did not follow, which is
@@ -93,7 +108,7 @@
  * `auth-failed` exactly as 3.2.4 did — the two halves ship independently, and
  * this side is safe in either order.
  */
-export const FORBIDDEN_CODES = Object.freeze(['SCOPE_REQUIRED', 'INSTALLATION_OWNER_REQUIRED'])
+export const FORBIDDEN_CODES = Object.freeze(['SCOPE_REQUIRED', 'INSTALLATION_OWNER_REQUIRED', 'NOT_GM'])
 
 /**
  * The rights code a 403 body carries, or null when the body is not a JSON
