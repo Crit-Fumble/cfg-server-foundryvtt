@@ -24,6 +24,8 @@
 
 'use strict'
 
+import { forbiddenCode } from '../auth/connection-state.js'
+
 const DEFAULT_TIMEOUT = 20_000 // 20 seconds
 const MAX_RETRIES = 2
 
@@ -147,7 +149,20 @@ export class CoreAPIClient {
           : 'Not logged in to Core. Open core.crit-fumble.com in your browser and sign in.',
       )
     }
-    if (res.status === 403) throw new Error('You do not have permission for this action.')
+    if (res.status === 403) {
+      // With a rights code the credential is alive and merely lacks a scope or
+      // an ownership right. The server writes that message for the user, so
+      // relay it as-is — and do NOT point at re-pairing or regenerating a key,
+      // which would mint one with the same rights. Any other 403 keeps the
+      // generic wording.
+      const code = forbiddenCode(body)
+      if (code && typeof body.error === 'string' && body.error) {
+        const err = new Error(body.error)
+        err.code = code
+        throw err
+      }
+      throw new Error('You do not have permission for this action.')
+    }
     if (res.status === 404) throw new Error('Resource not found.')
     if (res.status === 429) throw new Error('Rate limited — please try again in a moment.')
     throw new Error(body?.error ?? `Core server error (HTTP ${res.status})`)

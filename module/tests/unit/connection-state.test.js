@@ -4,7 +4,9 @@
  * Covers:
  *   - subscriber API: subscribe/unsubscribe + listener fanout
  *   - fetchCfg returns typed `{ ok, reason }` for every failure mode
- *     (offline, auth-failed, server-error, client-error)
+ *     (offline, auth-failed, forbidden, server-error, client-error)
+ *   - a 403 splits on its body: a rights code is `forbidden` (credential alive,
+ *     lacks a right), anything else stays `auth-failed` (credential dead)
  *   - fetchCfg never throws
  *   - connection-state mirrors the outcome of the last fetch
  */
@@ -86,6 +88,19 @@ describe('connection-state subscribers', () => {
   })
 })
 
+describe('forbiddenCode', () => {
+  it('recognizes exactly the two rights codes, on a JSON object body only', async () => {
+    const { forbiddenCode, FORBIDDEN_CODES } = await loadConnectionState()
+    expect(FORBIDDEN_CODES).toEqual(['SCOPE_REQUIRED', 'INSTALLATION_OWNER_REQUIRED'])
+    expect(forbiddenCode({ code: 'SCOPE_REQUIRED' })).toBe('SCOPE_REQUIRED')
+    expect(forbiddenCode({ code: 'INSTALLATION_OWNER_REQUIRED' })).toBe('INSTALLATION_OWNER_REQUIRED')
+    expect(forbiddenCode({ code: 'FORBIDDEN' })).toBeNull()
+    expect(forbiddenCode({ error: 'no code at all' })).toBeNull()
+    expect(forbiddenCode('SCOPE_REQUIRED')).toBeNull()
+    expect(forbiddenCode(null)).toBeNull()
+  })
+})
+
 describe('fetchCfg — typed result + connection-state side effects', () => {
   beforeEach(() => {
     settingsStore({ coreApiUrl: 'https://cfg.test', apiKey: 'cfk_secret' })
@@ -144,6 +159,97 @@ describe('fetchCfg — typed result + connection-state side effects', () => {
     const res = await fetchCfg('/api/v1/account/user')
 
     expect(res).toMatchObject({ ok: false, reason: 'auth-failed', status: 403 })
+  })
+
+  // A 403 wears two different meanings, and only the body tells them apart.
+  // With a rights code the credential is ALIVE and lacks a scope or an
+  // ownership right — pairing again would mint a key with the same rights, so
+  // this must not read as "re-pair required". Without one it keeps meaning
+  // what it always did.
+  it("returns { ok: false, reason: 'forbidden', code, scope } on a 403 with code SCOPE_REQUIRED", async () => {
+    globalThis.fetch = jest.fn(async () => ({
+      ok: false,
+      status: 403,
+      text: async () => '{"error":"Scope required: foundry:modules","code":"SCOPE_REQUIRED","scope":"foundry:modules"}',
+    }))
+
+    const { fetchCfg } = await loadPairFlow()
+    const { getConnectionState } = await import('../../scripts/auth/connection-state.js')
+    const res = await fetchCfg('/api/v1/foundry/modules', { method: 'POST', body: '{}' })
+
+    expect(res).toEqual({
+      ok: false,
+      reason: 'forbidden',
+      status: 403,
+      code: 'SCOPE_REQUIRED',
+      scope: 'foundry:modules',
+      body: { error: 'Scope required: foundry:modules', code: 'SCOPE_REQUIRED', scope: 'foundry:modules' },
+    })
+    expect(getConnectionState()).toMatchObject({ status: 'forbidden', lastStatusCode: 403 })
+  })
+
+  it("returns { ok: false, reason: 'forbidden', code } on a 403 with code INSTALLATION_OWNER_REQUIRED", async () => {
+    globalThis.fetch = jest.fn(async () => ({
+      ok: false,
+      status: 403,
+      text: async () => '{"error":"Only the installation owner can do this","code":"INSTALLATION_OWNER_REQUIRED"}',
+    }))
+
+    const { fetchCfg } = await loadPairFlow()
+    const { getConnectionState } = await import('../../scripts/auth/connection-state.js')
+    const res = await fetchCfg('/api/v1/foundry/modules', { method: 'POST', body: '{}' })
+
+    expect(res).toMatchObject({ ok: false, reason: 'forbidden', status: 403, code: 'INSTALLATION_OWNER_REQUIRED' })
+    expect(res.scope).toBeUndefined()
+    expect(getConnectionState().status).toBe('forbidden')
+  })
+
+  it("keeps a 403 with code FORBIDDEN as 'auth-failed' — not a rights code, no new meaning", async () => {
+    globalThis.fetch = jest.fn(async () => ({
+      ok: false,
+      status: 403,
+      text: async () => '{"error":"Admin access required","code":"FORBIDDEN"}',
+    }))
+
+    const { fetchCfg } = await loadPairFlow()
+    const { getConnectionState } = await import('../../scripts/auth/connection-state.js')
+    const res = await fetchCfg('/api/v1/admin/anything')
+
+    expect(res).toMatchObject({ ok: false, reason: 'auth-failed', status: 403 })
+    expect(res.code).toBeUndefined()
+    expect(getConnectionState().status).toBe('auth-failed')
+  })
+
+  it("keeps a 403 with a non-JSON body as 'auth-failed'", async () => {
+    globalThis.fetch = jest.fn(async () => ({
+      ok: false,
+      status: 403,
+      text: async () => '<html>Forbidden</html>',
+    }))
+
+    const { fetchCfg } = await loadPairFlow()
+    const { getConnectionState } = await import('../../scripts/auth/connection-state.js')
+    const res = await fetchCfg('/api/v1/account/user')
+
+    expect(res).toMatchObject({ ok: false, reason: 'auth-failed', status: 403, body: '<html>Forbidden</html>' })
+    expect(res.code).toBeUndefined()
+    expect(getConnectionState().status).toBe('auth-failed')
+  })
+
+  it("a 401 is always 'auth-failed', even when the body carries a rights code", async () => {
+    globalThis.fetch = jest.fn(async () => ({
+      ok: false,
+      status: 401,
+      text: async () => '{"error":"Invalid API key","code":"SCOPE_REQUIRED","scope":"foundry:modules"}',
+    }))
+
+    const { fetchCfg } = await loadPairFlow()
+    const { getConnectionState } = await import('../../scripts/auth/connection-state.js')
+    const res = await fetchCfg('/api/v1/account/user')
+
+    expect(res).toMatchObject({ ok: false, reason: 'auth-failed', status: 401 })
+    expect(res.code).toBeUndefined()
+    expect(getConnectionState().status).toBe('auth-failed')
   })
 
   it("returns { ok: false, reason: 'server-error', status } on a 5xx", async () => {

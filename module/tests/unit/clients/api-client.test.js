@@ -202,6 +202,46 @@ describe('error handling', () => {
     await expect(api.get('/api/test')).rejects.toThrow('permission')
   })
 
+  // A 403 with a rights code means the credential is alive and lacks a scope
+  // or an ownership right. The server's message is written for the user, so it
+  // is relayed as-is — and it must not point at re-pairing or regenerating a
+  // key, which would mint one with the same rights.
+  test('403 with code SCOPE_REQUIRED relays the server message, not the generic one', async () => {
+    const api = new CoreAPIClient('https://core.crit-fumble.com', 'cfk_alive')
+    mockFetch.mockResolvedValueOnce(
+      makeResponse(403, { error: 'Scope required: foundry:modules', code: 'SCOPE_REQUIRED', scope: 'foundry:modules' }),
+    )
+    const err = await api.get('/api/test').catch((e) => e)
+    expect(err).toBeInstanceOf(Error)
+    expect(err.message).toBe('Scope required: foundry:modules')
+    expect(err.code).toBe('SCOPE_REQUIRED')
+    expect(err.message).not.toMatch(/permission|regenerate|pair|expired/i)
+  })
+
+  test('403 with code INSTALLATION_OWNER_REQUIRED relays the server message', async () => {
+    const api = new CoreAPIClient('https://core.crit-fumble.com')
+    mockFetch.mockResolvedValueOnce(
+      makeResponse(403, { error: 'Only the installation owner can do this', code: 'INSTALLATION_OWNER_REQUIRED' }),
+    )
+    const err = await api.get('/api/test').catch((e) => e)
+    expect(err.message).toBe('Only the installation owner can do this')
+    expect(err.code).toBe('INSTALLATION_OWNER_REQUIRED')
+  })
+
+  test('403 with code FORBIDDEN keeps the generic permission message', async () => {
+    const api = new CoreAPIClient('https://core.crit-fumble.com')
+    mockFetch.mockResolvedValueOnce(makeResponse(403, { error: 'Admin access required', code: 'FORBIDDEN' }))
+    const err = await api.get('/api/test').catch((e) => e)
+    expect(err.message).toBe('You do not have permission for this action.')
+    expect(err.code).toBeUndefined()
+  })
+
+  test('403 with a rights code but no message falls back to the generic one', async () => {
+    const api = new CoreAPIClient('https://core.crit-fumble.com')
+    mockFetch.mockResolvedValueOnce(makeResponse(403, { code: 'SCOPE_REQUIRED' }))
+    await expect(api.get('/api/test')).rejects.toThrow('You do not have permission for this action.')
+  })
+
   test('404 throws not-found error', async () => {
     const api = new CoreAPIClient('https://core.crit-fumble.com')
     mockFetch.mockResolvedValueOnce(makeResponse(404))

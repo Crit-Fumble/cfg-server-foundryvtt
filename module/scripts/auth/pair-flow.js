@@ -18,7 +18,7 @@
 
 'use strict'
 
-import { setConnectionStatus } from './connection-state.js'
+import { forbiddenCode, setConnectionStatus } from './connection-state.js'
 import { readSeatKey } from './host-context.js'
 
 const MODULE_ID = 'crit-fumble-core'
@@ -99,7 +99,13 @@ export function getCfgApiKey() {
  * Result shape:
  *   { ok: true,  status, data }                 — 2xx, body parsed (JSON or null)
  *   { ok: false, reason: 'offline', error }     — network/DNS/timeout
- *   { ok: false, reason: 'auth-failed', status }— 401/403 (re-pair required)
+ *   { ok: false, reason: 'auth-failed', status, body }
+ *       — 401, or a 403 without a rights code: the credential is dead
+ *         (re-pair required)
+ *   { ok: false, reason: 'forbidden', status, code, scope?, body }
+ *       — 403 WITH a rights code (`SCOPE_REQUIRED` / `INSTALLATION_OWNER_REQUIRED`):
+ *         the credential is alive but lacks a scope or an ownership right.
+ *         NOT a re-pair signal — a fresh key would lack the same right.
  *   { ok: false, reason: 'server-error', status, body } — 5xx
  *   { ok: false, reason: 'client-error', status, body } — non-401/403 4xx
  *
@@ -108,7 +114,7 @@ export function getCfgApiKey() {
  *
  * @param {string} path                  — leading slash, e.g. `/api/v1/account/user`
  * @param {RequestInit & {timeoutMs?: number}} [init]
- * @returns {Promise<{ok:true,status:number,data:any}|{ok:false,reason:string,status?:number,body?:any,error?:string}>}
+ * @returns {Promise<{ok:true,status:number,data:any}|{ok:false,reason:string,status?:number,code?:string,scope?:string,body?:any,error?:string}>}
  */
 export async function fetchCfg(path, init = {}) {
   const endpoint = getCfgEndpoint()
@@ -183,7 +189,24 @@ export async function fetchCfg(path, init = {}) {
 
   const body = await _readBody(response)
 
-  if (status === 401 || status === 403) {
+  if (status === 401) {
+    // A 401 is always a dead credential, whatever the body says.
+    setConnectionStatus('auth-failed', status)
+    return { ok: false, reason: 'auth-failed', status, body }
+  }
+  if (status === 403) {
+    // Two different things wear a 403, and only the body tells them apart.
+    // With a rights code the credential is ALIVE and merely lacks a scope or
+    // an ownership right — pairing again would mint a key with the same
+    // rights, so this must not read as "re-pair required". Without one (no
+    // JSON, no code, any other code) it keeps its old meaning, which is
+    // indistinguishable from a dead key.
+    const code = forbiddenCode(body)
+    if (code) {
+      setConnectionStatus('forbidden', status)
+      const scope = typeof body.scope === 'string' ? body.scope : undefined
+      return { ok: false, reason: 'forbidden', status, code, scope, body }
+    }
     setConnectionStatus('auth-failed', status)
     return { ok: false, reason: 'auth-failed', status, body }
   }

@@ -71,7 +71,12 @@ export class CfgCampaignLinksDialog extends foundry.applications.api.Application
       // rejected by the browser on a separated Foundry host (cs#391), and three
       // call sites each re-deciding that is how the fix got missed the first time.
       const res = await fetchCfg('/api/v1/account/foundry/campaigns')
-      if (!res.ok) throw new Error(res.status ? `HTTP ${res.status}` : res.reason)
+      if (!res.ok) {
+        // A rights failure carries the server's own explanation, written for
+        // the user; every other failure is reported by status as before.
+        const detail = res.reason === 'forbidden' && typeof res.body?.error === 'string' ? res.body.error : null
+        throw new Error(detail || (res.status ? `HTTP ${res.status}` : res.reason))
+      }
       this.campaigns = Array.isArray(res.data?.data) ? res.data.data : []
     } catch (err) {
       this.errorMessage = `Couldn't load campaigns: ${err?.message ?? err}`
