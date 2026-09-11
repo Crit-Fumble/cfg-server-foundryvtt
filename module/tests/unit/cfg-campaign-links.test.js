@@ -37,37 +37,55 @@ describe('CfgCampaignLinksDialog — _loadData failure copy', () => {
     game.user.isGM = true
   })
 
-  it('relays the server explanation on a 403 INSTALLATION_OWNER_REQUIRED — not "HTTP 403", not a re-pair', async () => {
-    // cfg-core-server src/routes/v1/account/foundry-installed-modules.ts (+ foundry-system-schema.ts twin)
-    respond(
-      403,
-      '{"error":"Installation-level sync is owner-only — this key is bound to an installation you do not own","code":"INSTALLATION_OWNER_REQUIRED"}',
-    )
+  // ⛔ EVERY body below is one these routes can ACTUALLY send. An earlier version
+  // of this block asserted SCOPE_REQUIRED and INSTALLATION_OWNER_REQUIRED bodies
+  // here, citing `foundry-installed-modules.ts` and `_lib/auth.ts` — routes this
+  // dialog never calls. `_loadData` calls `GET /api/v1/account/foundry/campaigns`
+  // and the two `.../campaigns/:id/worlds` routes, ALL of which live in
+  // `foundry-management.ts`, which imports only `requireAuth, requireSession`
+  // (`:22`) — no scope gate. It cannot emit a scope code, and since `ddd280a`
+  // nothing emits INSTALLATION_OWNER_REQUIRED at all. Those assertions were green
+  // against bodies the server could not produce: the exact drift this PR exists
+  // to stop, inside the PR. Keep them anchored to real emitters.
+
+  it('relays the server sentence on a codeless 403 — the shape these routes actually send', async () => {
+    // cfg-core-server src/routes/v1/account/foundry-management.ts:651 (and :770).
+    // Note: no `code` field. This is what the old `reason === 'forbidden'` gate
+    // discarded, showing the user "HTTP 403" instead.
+    respond(403, '{"error":"Only the campaign creator can change Foundry linkage."}')
     const { CfgCampaignLinksDialog } = await loadDialog()
     const dialog = new CfgCampaignLinksDialog()
     await dialog._loadData()
 
-    expect(dialog.errorMessage).toBe(
-      "Couldn't load campaigns: Installation-level sync is owner-only — this key is bound to an installation you do not own",
-    )
-    expect(dialog.errorMessage).not.toMatch(/HTTP 403|re-pair|regenerate/i)
+    expect(dialog.errorMessage).toBe("Couldn't load campaigns: Only the campaign creator can change Foundry linkage.")
+    expect(dialog.errorMessage).not.toMatch(/HTTP 403/)
     expect(dialog.campaigns).toEqual([])
     expect(dialog.loading).toBe(false)
   })
 
-  it('relays the server explanation on a 403 SCOPE_REQUIRED', async () => {
-    // cfg-core-server src/routes/v1/_lib/auth.ts, requireScope / requireScopeIfApiKey
-    respond(403, '{"error":"Scope required: foundry:write","code":"SCOPE_REQUIRED","scope":"foundry:write"}')
+  it('relays the other codeless 403 this route sends', async () => {
+    // cfg-core-server src/routes/v1/account/foundry-management.ts:662
+    respond(403, '{"error":"Installation belongs to a different user."}')
     const { CfgCampaignLinksDialog } = await loadDialog()
     const dialog = new CfgCampaignLinksDialog()
     await dialog._loadData()
 
-    expect(dialog.errorMessage).toBe("Couldn't load campaigns: Scope required: foundry:write")
+    expect(dialog.errorMessage).toBe("Couldn't load campaigns: Installation belongs to a different user.")
   })
 
-  it('keeps "HTTP 403" for a 403 with code FORBIDDEN — the unbound-key case where re-pairing IS the answer', async () => {
-    // cfg-core-server src/routes/v1/account/foundry-installed-modules.ts, key bound to no installation
-    respond(403, '{"error":"API key is not bound to a Foundry installation — re-pair the plugin","code":"FORBIDDEN"}')
+  it('relays a 401 the server explained, rather than the bare status', async () => {
+    // cfg-core-server src/plugins/auth.ts — captured over HTTP from a live server
+    // on `next`: a dead cfk_ key answers exactly this.
+    respond(401, '{"error":"Invalid or expired API key","code":"INVALID_KEY"}')
+    const { CfgCampaignLinksDialog } = await loadDialog()
+    const dialog = new CfgCampaignLinksDialog()
+    await dialog._loadData()
+
+    expect(dialog.errorMessage).toBe("Couldn't load campaigns: Invalid or expired API key")
+  })
+
+  it('falls back to the status when a 4xx carries no explanation', async () => {
+    respond(403, '{}')
     const { CfgCampaignLinksDialog } = await loadDialog()
     const dialog = new CfgCampaignLinksDialog()
     await dialog._loadData()
@@ -75,17 +93,12 @@ describe('CfgCampaignLinksDialog — _loadData failure copy', () => {
     expect(dialog.errorMessage).toBe("Couldn't load campaigns: HTTP 403")
   })
 
-  it('keeps the status-only wording for a 401 and a 5xx', async () => {
-    const { CfgCampaignLinksDialog } = await loadDialog()
-
-    respond(401, '{"error":"Invalid API key"}')
-    let dialog = new CfgCampaignLinksDialog()
-    await dialog._loadData()
-    expect(dialog.errorMessage).toBe("Couldn't load campaigns: HTTP 401")
-
+  it('keeps the status-only wording for a 5xx — that body is not written for a user', async () => {
     respond(503, 'Service Unavailable')
-    dialog = new CfgCampaignLinksDialog()
+    const { CfgCampaignLinksDialog } = await loadDialog()
+    const dialog = new CfgCampaignLinksDialog()
     await dialog._loadData()
+
     expect(dialog.errorMessage).toBe("Couldn't load campaigns: HTTP 503")
   })
 
@@ -178,9 +191,37 @@ describe('CfgCampaignLinksDialog — _handleSave failure copy', () => {
     expect(message).toContain('Installation-level sync is owner-only')
   })
 
-  it('keeps the count-only wording for a 403 with no rights code', async () => {
-    // A 403 with no rights code — the unbound-key case, where re-pairing IS the answer.
+  it('relays even the unbound-key message — it names the fix, which a bare count does not', async () => {
+    // This ASSERTION WAS INVERTED until the codeless-403 fix. It required the
+    // count alone here, on the theory that a non-rights code means "re-pair" and
+    // the message would mislead. But the server's sentence IS "re-pair the
+    // plugin" — strictly more useful than "1 of 1 updates failed". The rights
+    // code decides whether the CREDENTIAL is dead; it was never a good proxy for
+    // whether the server wrote something worth showing.
     respond(403, '{"error":"API key is not bound to a Foundry installation — re-pair the plugin","code":"FORBIDDEN"}')
+    const { CfgCampaignLinksDialog } = await loadDialog()
+    const dialog = stage(CfgCampaignLinksDialog, [addedBox()])
+
+    await dialog._handleSave(button())
+
+    expect(ui.notifications.warn).toHaveBeenCalledWith(
+      '1 of 1 updates failed; some links may not have saved. API key is not bound to a Foundry installation — re-pair the plugin',
+    )
+  })
+
+  it('keeps the count-only wording when the 403 carries no message at all', async () => {
+    // The genuine fallback: nothing to relay, so do not invent one.
+    respond(403, '{}')
+    const { CfgCampaignLinksDialog } = await loadDialog()
+    const dialog = stage(CfgCampaignLinksDialog, [addedBox()])
+
+    await dialog._handleSave(button())
+
+    expect(ui.notifications.warn).toHaveBeenCalledWith('1 of 1 updates failed; some links may not have saved.')
+  })
+
+  it('keeps the count-only wording for a 5xx, whose body is not written for a user', async () => {
+    respond(503, '{"error":"upstream pool exhausted at worker 3"}')
     const { CfgCampaignLinksDialog } = await loadDialog()
     const dialog = stage(CfgCampaignLinksDialog, [addedBox()])
 

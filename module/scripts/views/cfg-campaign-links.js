@@ -72,10 +72,20 @@ export class CfgCampaignLinksDialog extends foundry.applications.api.Application
       // call sites each re-deciding that is how the fix got missed the first time.
       const res = await fetchCfg('/api/v1/account/foundry/campaigns')
       if (!res.ok) {
-        // A rights failure carries the server's own explanation, written for
-        // the user; every other failure is reported by status as before.
-        const detail = res.reason === 'forbidden' && typeof res.body?.error === 'string' ? res.body.error : null
-        throw new Error(detail || (res.status ? `HTTP ${res.status}` : res.reason))
+        // ⛔ Relay the server's 4xx `error` whenever there is one — do NOT gate it
+        // on a rights `code`. Gating on `reason === 'forbidden'` looked right and
+        // was measurably wrong: the ONLY routes this dialog calls live in
+        // `foundry-management.ts`, which imports no scope gate, and all three of
+        // its 403s (`:651`, `:662`, `:770`) carry a deliberate user-facing
+        // sentence and NO code. So `forbiddenCode()` returned null, `reason` was
+        // 'auth-failed', and the user saw "HTTP 403" while the server was saying
+        // "Only the campaign creator can change Foundry linkage."
+        //
+        // The rights code decides whether the CREDENTIAL is dead, which is a
+        // different question from whether the server wrote something worth
+        // showing. 5xx keeps the bare status: that body is not written for a user.
+        const relayable = res.status >= 400 && res.status < 500 && typeof res.body?.error === 'string'
+        throw new Error((relayable ? res.body.error : null) || (res.status ? `HTTP ${res.status}` : res.reason))
       }
       this.campaigns = Array.isArray(res.data?.data) ? res.data.data : []
     } catch (err) {
@@ -273,8 +283,19 @@ export class CfgCampaignLinksDialog extends foundry.applications.api.Application
         // A count-only warning throws that away, which is what sent a GM looking at
         // the credential instead of at the right — the one thing re-pairing cannot
         // fix. Report the first such message alongside the count.
+        //
+        // ⛔ Same correction as `_loadData`: keyed on a 4xx WITH a message, not on
+        // a rights `code`. The save path calls the two `.../campaigns/:id/worlds`
+        // routes, whose 403s (`foundry-management.ts:651`, `:662`, `:770`) carry a
+        // sentence and no code — so the `reason === 'forbidden'` test discarded
+        // every explanation these routes are actually capable of sending, which is
+        // the precise failure this block was written to prevent.
         const detail = failed
-          .map((r) => (r.status === 'fulfilled' && r.value.reason === 'forbidden' ? r.value.body?.error : null))
+          .map((r) => {
+            if (r.status !== 'fulfilled') return null
+            const { status, body } = r.value
+            return status >= 400 && status < 500 ? body?.error : null
+          })
           .find((m) => typeof m === 'string' && m.trim())
         const summary = `${failed.length} of ${results.length} updates failed; some links may not have saved.`
         ui.notifications.warn(detail ? `${summary} ${detail}` : summary)
