@@ -69,7 +69,15 @@
  *                                   emission sites. Verified against the tag:
  *                                   zero sends, the string surviving only in
  *                                   comments, positive-controlled against
- *                                   'SCOPE_REQUIRED' (3 sends).
+ *                                   'SCOPE_REQUIRED' (2 sends: `_lib/auth.ts`
+ *                                   :134 and :168). ⚠️ An earlier draft of this
+ *                                   note said THREE sends — it counted a comment
+ *                                   at :121 as a send, i.e. it made the exact
+ *                                   comment-vs-code error this list warns about.
+ *                                   The conclusion (2 sends -> 0) is unchanged;
+ *                                   the control that licensed it was wrong.
+ *                                   `server-403-code-inventory.test.js` now
+ *                                   derives this instead of a human counting.
  *                                   RETAINED anyway, deliberately — v1.212.0
  *                                   DID emit it, installed copies of this module
  *                                   are long-lived, and one meeting an older
