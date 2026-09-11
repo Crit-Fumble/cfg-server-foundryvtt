@@ -57,12 +57,25 @@ fi
 echo "  secret scan passed"
 
 # ── Trademarks, on the lines this commit ADDS (dt#401) ──────────────────────
-# Single-source checker lives in the cfg-core-dev-tools workspace parent.
-# Product commits are made from inside that workspace, where this path
-# resolves; a standalone clone or CI checkout skips silently instead of
-# hard-failing on a missing sibling.
-TRADEMARKS_CHECK="$REPO_ROOT/../../dev/scripts/check-trademarks.mjs"
-if [ -f "$TRADEMARKS_CHECK" ]; then
+# Single-source checker lives in the cfg-core-dev-tools workspace. Search
+# UPWARD for it rather than assuming a fixed depth: a git worktree lives one
+# level deeper than the ordinary checkout, so the old fixed "../../" resolved
+# to a path that does not exist and this gate skipped SILENTLY on every commit
+# made from a worktree (found 2026-09-11).
+#
+# Found nowhere within reach (a standalone clone, a CI checkout) still skips
+# silently and on purpose — that fallback must survive, so the search result is
+# what the guard below tests, not the bare path.
+TRADEMARKS_CHECK=""
+_tm_up="$REPO_ROOT"
+for _tm_hop in 1 2 3 4; do
+  _tm_up="$_tm_up/.."
+  if [ -f "$_tm_up/dev/scripts/check-trademarks.mjs" ]; then
+    TRADEMARKS_CHECK="$_tm_up/dev/scripts/check-trademarks.mjs"
+    break
+  fi
+done
+if [ -n "$TRADEMARKS_CHECK" ]; then
   echo "  trademarks (added lines)..."
   node "$TRADEMARKS_CHECK" --changed || {
     echo "  ✗ New trademark use in the lines this commit ADDS."
