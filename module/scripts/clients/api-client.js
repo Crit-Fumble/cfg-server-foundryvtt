@@ -153,15 +153,24 @@ export class CoreAPIClient {
       // With a rights code the credential is alive and merely lacks a scope or
       // an ownership right. The server writes that message for the user, so
       // relay it as-is — and do NOT point at re-pairing or regenerating a key,
-      // which would mint one with the same rights. Any other 403 keeps the
-      // generic wording.
+      // which cannot carry a right the account does not have. Any other 403
+      // keeps the generic wording.
+      //
+      // The MESSAGE degrades, the CODE does not. A body whose `error` is
+      // missing, empty or blank still falls back to the generic sentence rather
+      // than throwing a blank Error — but `code` rides along either way, because
+      // "this credential is alive" is what callers branch on (doc-pull-sync
+      // echoes it per document) and that fact does not depend on the server
+      // having written any prose.
       const code = forbiddenCode(body)
-      if (code && typeof body.error === 'string' && body.error) {
-        const err = new Error(body.error)
+      const generic = 'You do not have permission for this action.'
+      if (code) {
+        const relayed = typeof body.error === 'string' && body.error.trim() ? body.error : generic
+        const err = new Error(relayed)
         err.code = code
         throw err
       }
-      throw new Error('You do not have permission for this action.')
+      throw new Error(generic)
     }
     if (res.status === 404) throw new Error('Resource not found.')
     if (res.status === 429) throw new Error('Rate limited — please try again in a moment.')

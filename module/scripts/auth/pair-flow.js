@@ -105,7 +105,8 @@ export function getCfgApiKey() {
  *   { ok: false, reason: 'forbidden', status, code, scope?, body }
  *       — 403 WITH a rights code (`SCOPE_REQUIRED` / `INSTALLATION_OWNER_REQUIRED`):
  *         the credential is alive but lacks a scope or an ownership right.
- *         NOT a re-pair signal — a fresh key would lack the same right.
+ *         NOT a re-pair signal — a fresh key cannot carry a right the account
+ *         does not have.
  *   { ok: false, reason: 'server-error', status, body } — 5xx
  *   { ok: false, reason: 'client-error', status, body } — non-401/403 4xx
  *
@@ -197,10 +198,10 @@ export async function fetchCfg(path, init = {}) {
   if (status === 403) {
     // Two different things wear a 403, and only the body tells them apart.
     // With a rights code the credential is ALIVE and merely lacks a scope or
-    // an ownership right — pairing again would mint a key with the same
-    // rights, so this must not read as "re-pair required". Without one (no
-    // JSON, no code, any other code) it keeps its old meaning, which is
-    // indistinguishable from a dead key.
+    // an ownership right — pairing again cannot mint a key carrying a right the
+    // account does not have, so this must not read as "re-pair required".
+    // Without one (no JSON, no code, any other code) it keeps its old meaning,
+    // which is indistinguishable from a dead key.
     const code = forbiddenCode(body)
     if (code) {
       setConnectionStatus('forbidden', status)

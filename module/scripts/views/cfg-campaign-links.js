@@ -268,7 +268,16 @@ export class CfgCampaignLinksDialog extends foundry.applications.api.Application
       ])
       const failed = results.filter((r) => r.status === 'rejected' || !r.value.ok)
       if (failed.length) {
-        ui.notifications.warn(`${failed.length} of ${results.length} updates failed; some links may not have saved.`)
+        // Same rule as _loadData above: a rights failure carries the server's own
+        // explanation, written for the user and naming the right that is missing.
+        // A count-only warning throws that away, which is what sent a GM looking at
+        // the credential instead of at the right — the one thing re-pairing cannot
+        // fix. Report the first such message alongside the count.
+        const detail = failed
+          .map((r) => (r.status === 'fulfilled' && r.value.reason === 'forbidden' ? r.value.body?.error : null))
+          .find((m) => typeof m === 'string' && m.trim())
+        const summary = `${failed.length} of ${results.length} updates failed; some links may not have saved.`
+        ui.notifications.warn(detail ? `${summary} ${detail}` : summary)
       } else {
         ui.notifications.info(`Updated ${results.length} link${results.length === 1 ? '' : 's'}.`)
       }

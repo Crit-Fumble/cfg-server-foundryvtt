@@ -163,8 +163,9 @@ describe('fetchCfg — typed result + connection-state side effects', () => {
 
   // A 403 wears two different meanings, and only the body tells them apart.
   // With a rights code the credential is ALIVE and lacks a scope or an
-  // ownership right — pairing again would mint a key with the same rights, so
-  // this must not read as "re-pair required". Without one it keeps meaning
+  // ownership right — pairing again cannot mint a key carrying a right the
+  // account does not have, so this must not read as "re-pair required".
+  // Without one it keeps meaning
   // what it always did.
   //
   // Every 403 body below is VERBATIM what cfg-core-server sends — the file is

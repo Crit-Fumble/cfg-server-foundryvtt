@@ -13,8 +13,12 @@
  *                    the credential is dead (revoked, expired, never valid)
  *   'forbidden'    — last call returned 403 WITH a rights code: the credential
  *                    is alive but lacks a scope or an ownership right. NOT a
- *                    re-pair signal — pairing again mints a key with the same
- *                    rights, so treating this as "re-pair required" would loop
+ *                    re-pair signal — pairing filters the rights it grants
+ *                    against the account's role at that moment, so a fresh key
+ *                    cannot carry a right the account does not have; and an
+ *                    ownership right is not a scope, so no key grants it at all.
+ *                    Treating this as "re-pair required" is a loop that swapping
+ *                    the credential cannot end
  *   'server-error' — last call returned 5xx
  *   'client-error' — last call returned a non-401/403 4xx
  *
@@ -44,8 +48,10 @@
  *
  * A 403 carrying one of these is the platform saying WHO you are is fine and
  * WHAT you may do is not. Mapping it to `auth-failed` is wrong in both
- * directions: the key is not dead, and pairing again mints a key with the same
- * rights. Any other 403 — no JSON body, no `code`, or a code outside this list —
+ * directions: the key is not dead, and pairing again cannot mint a key carrying
+ * a right the account does not have — a pairing grants only what the account's
+ * role allows at that moment, and an ownership right is not a scope at all.
+ * Any other 403 — no JSON body, no `code`, or a code outside this list —
  * keeps its pre-3.2.5 meaning, indistinguishable from a dead credential.
  *
  * This list MIRRORS the core server, which is the source of truth for it:
