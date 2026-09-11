@@ -173,8 +173,9 @@ export class CfgLinkSettings extends foundry.applications.api.ApplicationV2 {
       return
     }
     // Best-effort: fetch the linked user's display name. fetchCfg never
-    // throws — offline/auth-failed/etc. simply leave the linked-user label
-    // empty and the row falls back to the endpoint string.
+    // throws — offline/auth-failed/forbidden/etc. simply leave the linked-user
+    // label empty and the row falls back to the endpoint string. None of them
+    // is a re-pair trigger; only the Unlink button ever clears the key.
     const { fetchCfg } = await import('../auth/pair-flow.js')
     const res = await fetchCfg('/api/v1/account/user')
     if (res.ok) {

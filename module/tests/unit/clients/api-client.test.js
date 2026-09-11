@@ -202,6 +202,82 @@ describe('error handling', () => {
     await expect(api.get('/api/test')).rejects.toThrow('permission')
   })
 
+  // A 403 with a rights code means the credential is alive and lacks a scope
+  // or an ownership right. The server's message is written for the user, so it
+  // is relayed as-is — and it must not point at re-pairing or regenerating a
+  // key, which cannot carry a right the account does not have.
+  // Every 403 body below is VERBATIM what cfg-core-server sends (file named on
+  // each), so a change to either side has a counterpart to update.
+  test('403 with code SCOPE_REQUIRED relays the server message, not the generic one', async () => {
+    const api = new CoreAPIClient('https://core.crit-fumble.com', 'cfk_alive')
+    // cfg-core-server src/routes/v1/_lib/auth.ts, requireScope / requireScopeIfApiKey
+    mockFetch.mockResolvedValueOnce(
+      makeResponse(403, { error: 'Scope required: foundry:write', code: 'SCOPE_REQUIRED', scope: 'foundry:write' }),
+    )
+    const err = await api.get('/api/test').catch((e) => e)
+    expect(err).toBeInstanceOf(Error)
+    expect(err.message).toBe('Scope required: foundry:write')
+    expect(err.code).toBe('SCOPE_REQUIRED')
+    expect(err.message).not.toMatch(/permission|regenerate|pair|expired/i)
+  })
+
+  test('403 with code INSTALLATION_OWNER_REQUIRED relays the server message', async () => {
+    const api = new CoreAPIClient('https://core.crit-fumble.com')
+    // cfg-core-server src/routes/v1/account/foundry-installed-modules.ts (+ the
+    // foundry-system-schema.ts twin), key bound to an installation the caller does not own
+    mockFetch.mockResolvedValueOnce(
+      makeResponse(403, {
+        error: 'Installation-level sync is owner-only — this key is bound to an installation you do not own',
+        code: 'INSTALLATION_OWNER_REQUIRED',
+      }),
+    )
+    const err = await api.get('/api/test').catch((e) => e)
+    expect(err.message).toBe('Installation-level sync is owner-only — this key is bound to an installation you do not own')
+    expect(err.code).toBe('INSTALLATION_OWNER_REQUIRED')
+    // The server pins the same property on its side: the copy never says re-pair.
+    expect(err.message).not.toMatch(/re-pair|regenerate/i)
+  })
+
+  test('403 with code FORBIDDEN keeps the generic permission message', async () => {
+    const api = new CoreAPIClient('https://core.crit-fumble.com')
+    // cfg-core-server src/routes/v1/_lib/auth.ts, requireAdmin
+    mockFetch.mockResolvedValueOnce(makeResponse(403, { error: 'Admin access required', code: 'FORBIDDEN' }))
+    const err = await api.get('/api/test').catch((e) => e)
+    expect(err.message).toBe('You do not have permission for this action.')
+    expect(err.code).toBeUndefined()
+  })
+
+  // The message is the server's to write and may be absent, empty or blank; the
+  // CODE is not. These three pin that split: the wording degrades to the generic
+  // sentence rather than to a blank Error, and `code` rides along regardless,
+  // because "this credential is alive" is what callers branch on.
+  test('403 with a rights code but no message falls back to the generic one, keeping the code', async () => {
+    const api = new CoreAPIClient('https://core.crit-fumble.com')
+    mockFetch.mockResolvedValueOnce(makeResponse(403, { code: 'SCOPE_REQUIRED' }))
+    const err = await api.get('/api/test').catch((e) => e)
+    expect(err.message).toBe('You do not have permission for this action.')
+    expect(err.code).toBe('SCOPE_REQUIRED')
+  })
+
+  test('403 with a rights code and an EMPTY message degrades to the generic one, keeping the code', async () => {
+    const api = new CoreAPIClient('https://core.crit-fumble.com', 'cfk_alive')
+    mockFetch.mockResolvedValueOnce(makeResponse(403, { error: '', code: 'SCOPE_REQUIRED', scope: 'foundry:write' }))
+    const err = await api.get('/api/test').catch((e) => e)
+    expect(err).toBeInstanceOf(Error)
+    // The failure this guards: an Error carrying the empty string through as its message.
+    expect(err.message).not.toBe('')
+    expect(err.message).toBe('You do not have permission for this action.')
+    expect(err.code).toBe('SCOPE_REQUIRED')
+  })
+
+  test('403 with a rights code and a BLANK message degrades to the generic one, keeping the code', async () => {
+    const api = new CoreAPIClient('https://core.crit-fumble.com', 'cfk_alive')
+    mockFetch.mockResolvedValueOnce(makeResponse(403, { error: '   ', code: 'INSTALLATION_OWNER_REQUIRED' }))
+    const err = await api.get('/api/test').catch((e) => e)
+    expect(err.message).toBe('You do not have permission for this action.')
+    expect(err.code).toBe('INSTALLATION_OWNER_REQUIRED')
+  })
+
   test('404 throws not-found error', async () => {
     const api = new CoreAPIClient('https://core.crit-fumble.com')
     mockFetch.mockResolvedValueOnce(makeResponse(404))

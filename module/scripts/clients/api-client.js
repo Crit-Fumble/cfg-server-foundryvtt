@@ -24,6 +24,8 @@
 
 'use strict'
 
+import { forbiddenCode } from '../auth/connection-state.js'
+
 const DEFAULT_TIMEOUT = 20_000 // 20 seconds
 const MAX_RETRIES = 2
 
@@ -147,7 +149,29 @@ export class CoreAPIClient {
           : 'Not logged in to Core. Open core.crit-fumble.com in your browser and sign in.',
       )
     }
-    if (res.status === 403) throw new Error('You do not have permission for this action.')
+    if (res.status === 403) {
+      // With a rights code the credential is alive and merely lacks a scope or
+      // an ownership right. The server writes that message for the user, so
+      // relay it as-is — and do NOT point at re-pairing or regenerating a key,
+      // which cannot carry a right the account does not have. Any other 403
+      // keeps the generic wording.
+      //
+      // The MESSAGE degrades, the CODE does not. A body whose `error` is
+      // missing, empty or blank still falls back to the generic sentence rather
+      // than throwing a blank Error — but `code` rides along either way, because
+      // "this credential is alive" is what callers branch on (doc-pull-sync
+      // echoes it per document) and that fact does not depend on the server
+      // having written any prose.
+      const code = forbiddenCode(body)
+      const generic = 'You do not have permission for this action.'
+      if (code) {
+        const relayed = typeof body.error === 'string' && body.error.trim() ? body.error : generic
+        const err = new Error(relayed)
+        err.code = code
+        throw err
+      }
+      throw new Error(generic)
+    }
     if (res.status === 404) throw new Error('Resource not found.')
     if (res.status === 429) throw new Error('Rate limited — please try again in a moment.')
     throw new Error(body?.error ?? `Core server error (HTTP ${res.status})`)
