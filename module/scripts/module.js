@@ -181,26 +181,21 @@ window.CFGCore = {
 /* -------------------------------------------- */
 
 /**
- * Pick the right default for `coreApiUrl` based on how Foundry is being
- * served. When the page path begins with `/servers/foundryvtt/` we're
- * inside the CFG VTT proxy — core-browser is at the same origin (localdev
- * tunnel, staging, or prod). Self-hosted Foundry falls through to the
- * prod URL; the user can override via Module Settings.
+ * Default for `coreApiUrl`: the production platform. Self-hosters change it in
+ * Module Settings (or via `window.CORE_API_URL` at the register site); a
+ * cfg-hosted world gets the platform-declared `cfg_core_endpoint` cookie value
+ * written over it by the ready-hook auto-correct on its first GM load.
  *
- * This sidesteps the (not-yet-implemented) `__CFG_HOSTED_CONTEXT__`
- * injection that host-context.js anticipates — once the proxy injects
- * the global, `applyHostedContext` overwrites this default with the
- * server-supplied endpoint anyway, so this stays correct as a fallback.
+ * ⛔ This used to answer `window.location.origin` on a `/servers/foundryvtt/`
+ * path, which was core only while hosted worlds were served from core. Since
+ * `foundryVttMode` 'retired' that origin is the Foundry host, and a default is
+ * the one value that gets PERSISTED into world data before any cookie is read —
+ * so the old branch seeded every fresh hosted world with an endpoint whose API
+ * calls 302 to core and lose their POST bodies on the way (cs#414, 2026-09-15).
+ * Same-origin dev/e2e stacks are covered by the cookie, which forward-auth mints
+ * on both edges, not by inference from the page.
  */
 function _detectDefaultCoreApiUrl() {
-  if (typeof window === 'undefined') return 'https://core.crit-fumble.com'
-  try {
-    if (window.location.pathname.startsWith('/servers/foundryvtt/')) {
-      return window.location.origin
-    }
-  } catch {
-    // location access can throw in restricted contexts — non-fatal
-  }
   return 'https://core.crit-fumble.com'
 }
 
@@ -439,7 +434,7 @@ Hooks.once('ready', async () => {
   // throwing `lacks permission to update Setting` on every load is pure noise
   // (session-zero prod logs: players 401'd writing installationId + coreApiUrl),
   // and players don't need these persisted — they resolve the endpoint from the
-  // same-origin URL below. So the setting writes here are GM-only.
+  // platform-declared cookie below. So the setting writes here are GM-only.
   const isGM = game.user?.isGM === true
   const onHostedPath =
     typeof window !== 'undefined' && window.location?.pathname?.startsWith('/servers/foundryvtt/') === true
@@ -451,16 +446,17 @@ Hooks.once('ready', async () => {
   await purgeLegacyWorldApiKey()
 
   // Auto-correct `coreApiUrl` + `installationId` when running cfg-hosted
-  // (proxied at `/servers/foundryvtt/{installationId}/*`). Existing worlds
-  // may have stale values saved before the smart default landed — typically
-  // the prod URL, which breaks iframe embedding in localdev / staging /
-  // private tunnels. The installationId derives from the page path so the
+  // (proxied at `/servers/foundryvtt/{installationId}/*`). Existing worlds may
+  // carry a stale endpoint — the prod URL on a localdev / staging / tunnel stack,
+  // or the Foundry host itself on a world seeded by the pre-cs#414 default — and
+  // the platform-declared `cfg_core_endpoint` cookie (minted on both edges) is
+  // what corrects it. The installationId derives from the page path so the
   // plugin doesn't depend on `__CFG_HOSTED_CONTEXT__` injection or the
   // pair-flow having run. Idempotent: only writes on actual change, GM-only.
   try {
     if (isGM && onHostedPath) {
       // ⛔ Was `window.location.origin`. That is core ONLY while hosted Foundry is
-      // served from core itself; after cs#391 it is the Foundry host, and writing it
+      // served from core itself; since cs#391 it is the Foundry host, and writing it
       // here PERSISTS the wrong endpoint into world data — outliving the page and
       // clobbering the correct value applyHostedContext just fetched from the server.
       // Resolve instead, and never overwrite a server-DECLARED endpoint.
@@ -472,8 +468,11 @@ Hooks.once('ready', async () => {
           console.log(`CFG Core | coreApiUrl set from the platform-declared endpoint ${resolved.endpoint} (was ${storedUrl})`)
         }
       } else if (resolved.endpoint && storedUrl !== resolved.endpoint) {
-        // No declared endpoint (today's deployment): keep the old self-heal, which
-        // exists because a world can carry a stale prod URL in localdev/staging/tunnels.
+        // Undeclared = no cookie, no injected context — and since cs#414 the resolver's
+        // only source left is the stored setting itself, so `resolved.endpoint` IS
+        // `storedUrl` (or null) and this cannot fire. That is the point: a lapsed
+        // cookie must never become a write, and the page origin is no longer anything
+        // the resolver can hand back. Kept as the undeclared half of the split; a no-op.
         await game.settings.set(MODULE_ID, 'coreApiUrl', resolved.endpoint)
         console.log(`CFG Core | coreApiUrl auto-corrected to ${resolved.endpoint} (was ${storedUrl})`)
       }
@@ -518,12 +517,12 @@ Hooks.once('ready', async () => {
     }
   }
 
-  // Prefer the same-origin URL on a cfg-hosted path so a non-GM player — who no
-  // longer writes `coreApiUrl` above — still targets the right endpoint even if
-  // the stored world setting is stale. Self-hosted falls back to the setting.
-  // Resolver, not `location.origin`: see resolveCoreEndpoint's docblock for the
-  // precedence. Identical result on today's same-origin deployment; correct on a
-  // moved Foundry host the moment the platform declares an endpoint.
+  // The resolver, never `location.origin`: the platform-declared cookie when it is
+  // present — the only channel a non-GM player (who no longer writes `coreApiUrl`
+  // above) has, and what a same-origin dev/e2e stack gets too — else the stored
+  // setting. On the Foundry host the page origin 302s every API call to core and
+  // downgrades the POSTs to GET (cs#414), so it is not in the precedence at all.
+  // The `||` is belt-and-braces: the resolver's own last step is this setting.
   const apiUrl = resolveCoreEndpoint().endpoint || game.settings.get(MODULE_ID, 'coreApiUrl')
   // Both hosting modes read the same stored key: cfg-hosted gets an installation
   // key from `applyHostedContext` (programmatic pairing) or, if that couldn't mint

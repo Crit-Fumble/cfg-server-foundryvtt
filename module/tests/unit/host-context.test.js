@@ -190,6 +190,10 @@ describe('applyHostedContext', () => {
 
   it('programmatic pairing: cfg-hosted route + no global → fetches the host key and stores it', async () => {
     globalThis.window.location = { pathname: '/servers/foundryvtt/rotfs/game', origin: 'https://core.crit-fumble.com' }
+    // Same-origin install = the STORED (or declared) endpoint is this page's origin.
+    // Since cs#414 the resolver never infers that from the path, so the fixture
+    // has to say it; the `https://default` sentinel above would read as cross-origin.
+    store = settingsStore({ coreApiUrl: 'https://core.crit-fumble.com', apiKey: '', installationId: '' })
     globalThis.fetch = jest.fn(async () => ({
       ok: true,
       json: async () => ({ endpoint: 'https://core.crit-fumble.com', apiKey: 'cfk_minted', installationId: 'inst_abc', cfgUserId: 'owner_1' }),
@@ -217,6 +221,23 @@ describe('applyHostedContext', () => {
 
     expect(kind).toBe('cfg-hosted')
     expect(store.get('apiKey')).toBe('') // stale Bearer cleared → session-cookie auth
+  })
+
+  it('nothing known at all (setting blanked, cookies lapsed) → no hosted-context fetch from the page origin (cs#414)', async () => {
+    globalThis.window.location = { pathname: '/servers/foundryvtt/rotfs/game', origin: 'https://foundryvtt.crit-fumble.com' }
+    globalThis.document.cookie = ''
+    // `new URL(null, origin)` would resolve relative and read as same-origin —
+    // i.e. fetch hosted-context from the Foundry host, which 302s to core and
+    // fails CORS on every load. Unknown must mean "not this origin".
+    store = settingsStore({ coreApiUrl: '', apiKey: 'cfk_stale', installationId: '' })
+    globalThis.fetch = jest.fn()
+
+    const { applyHostedContext } = await loadHostContext()
+    const kind = await applyHostedContext()
+
+    expect(kind).toBe('cfg-hosted')
+    expect(globalThis.fetch).not.toHaveBeenCalled()
+    expect(store.get('apiKey')).toBe('')
   })
 
   it('skips the write when the setting already matches — no spurious change hooks', async () => {
@@ -268,24 +289,32 @@ describe('getHostedContext', () => {
 })
 
 /**
- * cs#391 — the core endpoint is no longer "this page's origin".
+ * cs#391 / cs#414 — the core endpoint is NEVER "this page's origin".
  *
- * Hosted Foundry is moving to its own host, so `window.location.origin` stops being
- * the platform API. These pin the precedence, because the risk is asymmetric: get it
- * wrong toward the page origin and the module calls the Foundry host for platform
- * APIs and PERSISTS that into world data; get it wrong toward the stored setting and
- * a stale prod URL breaks localdev. The order below is what satisfies both.
+ * Hosted Foundry is served only from its own host (`foundryVttMode` 'retired'), so
+ * `window.location.origin` on a hosted path is the Foundry host. Calling the platform
+ * API there 302s to core: the browser follows cross-origin, CORS blocks the response,
+ * and the redirect downgrades every POST to GET — which is how ~5h of snapshot pushes
+ * were discarded in prod on 2026-09-15 (cs#414), on a tab whose 12h page cookies had
+ * lapsed. The resolver used to fall back to the page origin in exactly that gap.
+ *
+ * These pin the precedence — injected context → cookie → stored setting → null — and,
+ * in every fixture, that the page origin is not in it. The window is on the Foundry
+ * host throughout so a regression toward `location.origin` reads as a wrong answer,
+ * not a coincidentally right one.
  */
 describe('resolveCoreEndpoint', () => {
+  const PAGE_ORIGIN = 'https://foundryvtt.crit-fumble.com'
+
   beforeEach(() => {
     globalThis.window = globalThis.window || {}
     delete globalThis.window.__CFG_HOSTED_CONTEXT__
-    globalThis.window.location = { pathname: '/servers/foundryvtt/inst-1/game', origin: 'https://foundryvtt.crit-fumble.com' }
+    globalThis.window.location = { pathname: '/servers/foundryvtt/inst-1/game', origin: PAGE_ORIGIN }
     globalThis.document = { cookie: '' }
     settingsStore({})
   })
 
-  it('prefers the injected context over everything', async () => {
+  it('prefers the injected context over the cookie and the stored setting', async () => {
     globalThis.window.__CFG_HOSTED_CONTEXT__ = {
       endpoint: 'https://core.crit-fumble.com',
       apiKey: 'cfk_x',
@@ -293,26 +322,35 @@ describe('resolveCoreEndpoint', () => {
       cfgUserId: 'u1',
     }
     globalThis.document.cookie = 'cfg_core_endpoint=https://wrong.example'
+    settingsStore({ coreApiUrl: 'https://also-wrong.example' })
     const { resolveCoreEndpoint } = await loadHostContext()
     expect(resolveCoreEndpoint()).toEqual({ endpoint: 'https://core.crit-fumble.com', declared: true })
   })
 
-  it('uses the server-declared cookie — the only channel that reaches a player or non-owner GM', async () => {
+  it('cookie beats the stored setting, declared:true — the only channel that reaches a player or non-owner GM', async () => {
     globalThis.document.cookie = 'other=1; cfg_core_endpoint=https%3A%2F%2Fcore.crit-fumble.com; x=2'
-    const { resolveCoreEndpoint } = await loadHostContext()
-    // NOT the page origin, which is the Foundry host in this fixture.
-    expect(resolveCoreEndpoint()).toEqual({ endpoint: 'https://core.crit-fumble.com', declared: true })
-  })
-
-  it('falls back to the page origin on a hosted path when nothing is declared — today behavior', async () => {
-    const { resolveCoreEndpoint } = await loadHostContext()
-    expect(resolveCoreEndpoint()).toEqual({ endpoint: 'https://foundryvtt.crit-fumble.com', declared: false })
-  })
-
-  it('prefers the page origin OVER a stored setting on a hosted path, so a stale prod URL cannot win', async () => {
     settingsStore({ coreApiUrl: 'https://stale-prod.example' })
     const { resolveCoreEndpoint } = await loadHostContext()
-    expect(resolveCoreEndpoint().endpoint).toBe('https://foundryvtt.crit-fumble.com')
+    expect(resolveCoreEndpoint()).toEqual({ endpoint: 'https://core.crit-fumble.com', declared: true })
+  })
+
+  it('hosted path, lapsed cookies, no injected context → the stored setting, declared:false, NEVER the page origin (cs#414)', async () => {
+    settingsStore({ coreApiUrl: 'https://core.crit-fumble.com' })
+    const { resolveCoreEndpoint } = await loadHostContext()
+    const resolved = resolveCoreEndpoint()
+    expect(resolved).toEqual({ endpoint: 'https://core.crit-fumble.com', declared: false })
+    expect(resolved.endpoint).not.toBe(PAGE_ORIGIN)
+  })
+
+  it('hosted path with nothing at all → null, not the page origin', async () => {
+    const { resolveCoreEndpoint } = await loadHostContext()
+    expect(resolveCoreEndpoint()).toEqual({ endpoint: null, declared: false })
+  })
+
+  it('treats an empty stored setting as nothing, not as a cue to guess', async () => {
+    settingsStore({ coreApiUrl: '' })
+    const { resolveCoreEndpoint } = await loadHostContext()
+    expect(resolveCoreEndpoint()).toEqual({ endpoint: null, declared: false })
   })
 
   it('uses the stored setting when self-hosted (not on the hosted path)', async () => {
@@ -322,7 +360,8 @@ describe('resolveCoreEndpoint', () => {
     expect(resolveCoreEndpoint()).toEqual({ endpoint: 'https://core.crit-fumble.com', declared: false })
   })
 
-  it('reports declared:false for the fallbacks, so a GM auto-correct knows not to overwrite', async () => {
+  it('reports declared:false for the stored fallback, so a GM auto-correct knows not to overwrite', async () => {
+    settingsStore({ coreApiUrl: 'https://core.crit-fumble.com' })
     const { resolveCoreEndpoint } = await loadHostContext()
     expect(resolveCoreEndpoint().declared).toBe(false)
   })
@@ -407,9 +446,10 @@ describe('applyHostedContext — cross-origin core (cs#391)', () => {
     expect(store.get('apiKey')).toBe('cfk_minted')
   })
 
-  it('with nothing declared, keeps today\'s same-origin behaviour rather than guessing', async () => {
+  it('with nothing declared, the STORED endpoint decides — same-origin stored → still fetches', async () => {
     // No endpoint cookie, no injected global: the guard must not invent a
     // cross-origin verdict and silently stop working on a same-origin install.
+    // The store in beforeEach already names this origin.
     globalThis.window.location = {
       pathname: '/servers/foundryvtt/rotfs/game',
       origin: 'https://core.crit-fumble.com',
@@ -421,6 +461,26 @@ describe('applyHostedContext — cross-origin core (cs#391)', () => {
     await applyHostedContext()
 
     expect(globalThis.fetch).toHaveBeenCalledTimes(1)
+  })
+
+  it('with nothing declared and core stored elsewhere, does NOT fetch from this page\'s origin (cs#414)', async () => {
+    // The 2026-09-15 shape: a tab on the Foundry host whose 12h page cookies have
+    // lapsed. The resolver used to answer with `location.origin` here, and this
+    // call then 302'd to core and died in CORS on every world load. Now it reads
+    // the stored setting, sees another origin, and makes no request at all.
+    globalThis.window.location = {
+      pathname: '/servers/foundryvtt/rotfs/game',
+      origin: 'https://foundryvtt.crit-fumble.com',
+    }
+    globalThis.document = { cookie: '' }
+    globalThis.fetch = jest.fn(async () => ({ ok: false, json: async () => ({}) }))
+
+    const { applyHostedContext } = await loadHostContext()
+    const kind = await applyHostedContext()
+
+    expect(kind).toBe('cfg-hosted')
+    expect(globalThis.fetch).not.toHaveBeenCalled()
+    expect(store.get('apiKey')).toBe('')
   })
 
   it('an OPAQUE origin falls back to same-origin rather than disabling the call', async () => {

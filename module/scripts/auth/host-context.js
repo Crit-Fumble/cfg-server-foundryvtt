@@ -53,10 +53,12 @@ const MODULE_ID = 'crit-fumble-core'
 const CFG_HOSTED_PATH_PREFIX = '/servers/foundryvtt/'
 
 /**
- * Cookie the platform sets on a cfg-hosted page to DECLARE where core lives and,
- * for a GM seat, to hand this browser a scoped Bearer key. Both are absent today
- * and the module falls back to its pre-3.1.0 behaviour when they are — this is
- * forward-compatible plumbing, inert until cfg-core-server ships the cookies.
+ * Cookies the platform sets on a cfg-hosted page (cs#391): one DECLARES where core
+ * lives, the other hands a seated browser its own scoped Bearer key. forward-auth
+ * mints both on every top-level navigation, on core's edge and on the Foundry
+ * host alike, and Caddy relays them as Set-Cookie on every stack (prod, dev, e2e).
+ * When the endpoint cookie is absent the fallback is the STORED setting — never
+ * the page origin (cs#414); when the seat key is absent the client is keyless.
  */
 const CORE_ENDPOINT_COOKIE = 'cfg_core_endpoint'
 const SEAT_KEY_COOKIE = 'cfg_foundry_seat_key'
@@ -78,28 +80,41 @@ function _cookie(name) {
 }
 
 /**
- * The platform's own origin — which is NOT necessarily this page's origin.
+ * The platform's own origin — which is NOT this page's origin.
  *
  * ⛔ Until cs#391 those were the same thing: hosted Foundry was served from
  * core.crit-fumble.com itself, so `window.location.origin` WAS the core API. That
- * coincidence is what the module encoded in several places, and it ends the moment
- * hosted Foundry moves to its own host — where `location.origin` is the Foundry
- * host and calling the API there 404s (and, worse, gets PERSISTED into the
- * `coreApiUrl` world setting, so the mistake outlives the page).
+ * coincidence is what the module encoded in several places. Since `foundryVttMode`
+ * 'retired' every hosted world is served ONLY from the Foundry host, so a hosted
+ * path is by definition on an origin that is never core.
  *
  * Precedence, and the order is deliberate:
  *   1. injected `__CFG_HOSTED_CONTEXT__.endpoint` — the contracted channel.
  *   2. the `cfg_core_endpoint` cookie — server-declared, authoritative, and the
  *      only channel that reaches a NON-OWNER GM or a player (the hosted-context
- *      endpoint is owner-scoped and 404s everyone else).
- *   3. on a hosted path with neither of the above: `location.origin` — today's
- *      behaviour, correct while Foundry is served from core, and deliberately
- *      ABOVE the stored setting because that setting can hold a stale prod URL in
- *      localdev/staging/tunnels (the reason the ready-hook auto-correct exists).
- *   4. the stored `coreApiUrl` setting — the self-hosted case.
+ *      endpoint is owner-scoped and 404s everyone else). forward-auth mints it on
+ *      BOTH edges — core and the Foundry host — on every top-level navigation, so a
+ *      same-origin dev/e2e stack is declared too, never inferred from the page.
+ *   3. the stored `coreApiUrl` setting — the self-hosted case, and all that is left
+ *      on a hosted page whose cookies have lapsed. It holds the declared value the
+ *      ready-hook persisted the last time a cookie was seen, or the registered
+ *      default (core).
+ *   4. null — nothing known; the caller decides.
  *
- * So on today's deployment this returns exactly what the old code returned, and it
- * switches to the declared endpoint the instant the platform starts sending one.
+ * ⛔ There is deliberately NO "hosted path → `location.origin`" step, and there
+ * used to be one between 2 and 3 (cs#414, measured in prod 2026-09-15). The page
+ * cookies carry Max-Age 12h and are minted only on a top-level navigation, so a tab
+ * open longer than that and re-booted by the Foundry client without the document
+ * request reaching Caddy had neither cookie, and the old step answered with the
+ * Foundry host. Every courier call then went to foundryvtt.crit-fumble.com/api/v1/…,
+ * Caddy's catch-all 302'd it to core, the browser followed cross-origin WITH
+ * credentials (api-client's same-origin check was now true), core withheld
+ * `Access-Control-Allow-Credentials` and the console blamed core for a CORS block —
+ * and the 302 downgraded every POST to GET, so ~5h of snapshot pushes 404'd and were
+ * silently discarded. A stale stored setting is a BOUNDED problem — the cookie
+ * corrects it on the GM's next top-level navigation — whereas the page origin was
+ * wrong by construction on the only host that serves hosted worlds, and got
+ * re-derived on every load.
  *
  * @returns {{ endpoint: string|null, declared: boolean }} `declared` is true only
  *   for 1 and 2 — the cases a GM auto-correct must not overwrite.
@@ -110,11 +125,6 @@ export function resolveCoreEndpoint() {
 
   const fromCookie = _cookie(CORE_ENDPOINT_COOKIE)
   if (_isNonEmptyString(fromCookie)) return { endpoint: fromCookie, declared: true }
-
-  if (isOnHostedPath()) {
-    const origin = _originOrNull()
-    if (origin) return { endpoint: origin, declared: false }
-  }
 
   const stored = _storedSetting('coreApiUrl')
   return { endpoint: _isNonEmptyString(stored) ? stored : null, declared: false }
@@ -129,15 +139,6 @@ export function resolveCoreEndpoint() {
  */
 export function readSeatKey() {
   return _cookie(SEAT_KEY_COOKIE)
-}
-
-/** True when this page is served under the cfg-hosted route prefix. */
-export function isOnHostedPath() {
-  return (
-    typeof window !== 'undefined' &&
-    typeof window.location?.pathname === 'string' &&
-    window.location.pathname.startsWith(CFG_HOSTED_PATH_PREFIX)
-  )
 }
 
 /** Read a module setting without throwing when Foundry is not ready. */
@@ -278,17 +279,28 @@ export async function applyHostedContext() {
   // normal, which is exactly how a real one gets missed. The cookie path below
   // (`cfg_core_endpoint` + `cfg_foundry_seat_key`) is what serves this origin,
   // and unlike this endpoint it reaches non-owner GMs and players too.
-  // `resolveCoreEndpoint` always yields something on a hosted path — it falls
-  // back to `location.origin` — so there is no "nothing declared" branch to
-  // guard here; a null or malformed value lands in the catch, which defaults to
-  // SAME-origin, i.e. today's behaviour. Defaulting the other way would silently
-  // disable this call on a same-origin install.
+  // `resolveCoreEndpoint` has no page-origin step (cs#414), so with nothing
+  // declared this is the stored setting — a value that names ANOTHER origin on a
+  // world whose cookies lapsed on the Foundry host, which is exactly when this
+  // fetch must not be made from here. NOTHING known at all (the GM blanked the
+  // setting and the cookies lapsed) is treated the same way: `new URL(null,
+  // origin)` would resolve RELATIVE and read as same-origin, i.e. fetch from the
+  // Foundry host. A same-origin install is never in that state — the setting is
+  // registered with a non-empty default and the platform declares the endpoint
+  // by cookie on every stack — so refusing here disables nothing legitimate. A
+  // value that is not an absolute URL resolves RELATIVE to this origin (or, if
+  // it cannot parse at all, lands in the catch) and reads as same-origin — a
+  // wrong-host fetch that now fails loudly as a 404 rather than a CORS error.
   const { endpoint: declaredEndpoint } = resolveCoreEndpoint()
   let coreIsThisOrigin
-  try {
-    coreIsThisOrigin = new URL(declaredEndpoint, origin).origin === origin
-  } catch {
-    coreIsThisOrigin = true
+  if (!_isNonEmptyString(declaredEndpoint)) {
+    coreIsThisOrigin = false
+  } else {
+    try {
+      coreIsThisOrigin = new URL(declaredEndpoint, origin).origin === origin
+    } catch {
+      coreIsThisOrigin = true
+    }
   }
   if (!coreIsThisOrigin) {
     // Not a warning: this is the expected, correct path on a separated origin.
