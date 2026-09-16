@@ -59,6 +59,38 @@
  *     stranded child is recoverable by hand, a destroyed player item is not — but the window
  *     is a one-way loss, not a pause, so keep it short.
  *
+ *  7. THE WORLD WINS A NEWER EDIT (cs#417 rec 1). Facts 3 and 6 stopped the courier DELETING
+ *     a child it should not have, and rec 3 stopped ownership being re-asserted over a GM's
+ *     change. Neither touches a plain UPDATE — page text a GM edits in Foundry was still
+ *     overwritten by a tick carrying OLDER platform text, which was the last live repro still
+ *     failing. So before applying, the live doc's EFFECTIVE clock is compared against the
+ *     item's `platformChangedAt`, and a strictly-newer world DEFERS the write:
+ *     `ApplyRefusal('WORLD_NEWER')`. A not-ok ack leaves the server's `lastPushedData` alone
+ *     (`recordActorSyncResults` only writes the baseline when `r.ok`), so the item is simply
+ *     re-planned next tick and keeps being offered until the platform genuinely moves ahead.
+ *
+ *     ⚠️ DEFERRAL IS NOT FAILURE, WHICH IS WHY THE CODE IS ITS OWN. A generic error would be
+ *     indistinguishable in logs from a doc that genuinely could not be written.
+ *
+ *     ⚠️ Null means APPLY on BOTH sides — an absent `platformChangedAt` (no baseline) and an
+ *     absent world clock (absence is not an edit). `world-doc-clock.js` owns that rule; read
+ *     its header before touching this, and note scenes deliberately never get here.
+ *
+ *  8. `update()` RESOLVES WITH `undefined` WHEN FOUNDRY DROPS THE UPDATE (cs#417 rec 8) — it
+ *     does NOT reject. `client/data/client-backend.mjs` `continue`s past the dispatch on a
+ *     `preUpdate` veto, on a validation failure, AND on an empty diff, and
+ *     `common/abstract/document.mjs:750` returns `updates.shift()` off the resulting empty
+ *     array. So a system hook could silently swallow a platform edit while this module acked
+ *     `ok` and the server baselined a doc the world never received — the same silent-staleness
+ *     shape as fact 6, arriving by a different door.
+ *
+ *     THE EMPTY DIFF IS NOT A FAILURE, and it takes the SAME `continue`, so the return value
+ *     alone cannot tell them apart. `_updateLive` asks Foundry itself: the dry-run
+ *     `updateSource` diff computed one line above that check. Non-empty diff + nothing written
+ *     = `ApplyRefusal('UPDATE_REJECTED')`; empty diff = success. A document class that cannot
+ *     be dry-run degrades to "applied", because a failure we cannot substantiate would stall
+ *     the push forever — the same direction as fact 7's null handling.
+ *
  * Single-reporter election: the human GM with the smallest id does the work; the service-GM
  * only when it is the sole connected GM. A GM is required — creating documents and setting
  * ownership are GM-only.
@@ -71,6 +103,7 @@
 
 import { probeDocumentHealth } from './document-health-probe.js'
 import { DocumentHealthError } from './document-apply.js'
+import { effectiveWorldModifiedTime } from './world-doc-clock.js'
 
 const PULL_MS = 30_000 // "edit, then see it in Foundry"
 
@@ -289,6 +322,17 @@ export class DocPullSync {
 
     const live = cfg.collection().get(foundryDocId)
 
+    // cs#417 rec 1 — defer to a world edit newer than the platform copy. Before ANY write,
+    // including the embedded reconciliation below. See the header, fact 7.
+    //
+    // Deliberately BELOW the `item.deleted` branch: rec 1 is about an update overwriting a
+    // GM's text, and a platform-side delete is an explicit lifecycle decision (dt#250), not a
+    // stale payload. Deferring one would re-offer the delete every 30s forever while the GM
+    // kept editing — a loop, not a protection — so the delete path keeps its own semantics.
+    if (live && this._worldIsNewer(item, live)) {
+      throw new ApplyRefusal('WORLD_NEWER', `${cfg.noun} was edited in this world after the platform copy changed`)
+    }
+
     if (!live) {
       if (everPushed) {
         // We wrote this document before and it is gone: the GM deleted it. Re-creating it
@@ -320,12 +364,96 @@ export class DocPullSync {
 
     // Deletion markers come from the SERVER's removedPaths — never from diffing the live
     // document. See the header, fact 4.
-    await live.update(withRemovals(fields, item.removedPaths))
+    await this._updateLive(live, withRemovals(fields, item.removedPaths))
 
     for (const e of embedded) {
       // Removals are keyed by the DOCDATA FIELD (`items`, `effects`, `pages`, `tokens`, …),
       // which is the same `e.field` the desired children are read from. See the header, fact 3.
       await this._reconcileEmbedded(live, e.name, e.of(live), docData[e.field], item.removedEmbedded?.[e.field])
+    }
+  }
+
+  /**
+   * cs#417 rec 1 — is the WORLD's copy of this doc newer than the platform's? (header, fact 7)
+   *
+   * The embedded fields come from the config this engine was already given: `e.field` names
+   * the docData collection AND the live document's accessor (`items`, `effects`, `pages`), so
+   * no config had to grow a second list that could disagree with the first.
+   *
+   * ⚠️ BOTH NULLS MEAN APPLY. No `platformChangedAt` is "no baseline", an unparseable one is
+   * not a rule but a coin flip (NaN compares false in both directions, so it must never reach
+   * the comparison), and no world clock is absence-of-evidence. Only a readable world clock
+   * STRICTLY greater than a readable platform instant defers the write.
+   */
+  _worldIsNewer(item, live) {
+    const raw = item?.platformChangedAt
+    if (raw == null) return false
+    const platformMs = raw instanceof Date ? raw.getTime() : new Date(raw).getTime()
+    if (!Number.isFinite(platformMs)) return false
+
+    const fields = (this._cfg.embedded ?? []).map((e) => e.field)
+    const worldMs = effectiveWorldModifiedTime(live, fields)
+    return worldMs != null && worldMs > platformMs
+  }
+
+  /**
+   * cs#417 rec 8 — update, and REFUSE TO CALL IT DONE unless it actually landed (header, fact 8).
+   *
+   * Three outcomes, and the return value alone cannot separate them because Foundry drops all
+   * three with the same `continue`:
+   *   · a document came back            → applied.
+   *   · nothing came back, source moved → applied anyway; trust the document over the return.
+   *   · nothing came back, source still → ask whether there was anything to apply. A non-empty
+   *     dry-run diff means a veto or a validation failure swallowed a real change: NOT APPLIED.
+   *     An empty diff means the world already matched, which is success.
+   *
+   * A dry run that THROWS is the validation-failure path (`client-backend.mjs` catches and
+   * `continue`s), so it counts as a real pending change. A doc class with no `updateSource` —
+   * or no `_source` to compare — cannot be adjudicated, and unknown degrades to APPLIED: see
+   * the header, fact 8, for why an unsubstantiated failure is the worse error here.
+   */
+  async _updateLive(live, payload) {
+    const before = this._sourceSnapshot(live)
+    const pending = this._payloadWouldChange(live, payload)
+
+    const returned = await live.update(payload)
+    if (returned) return
+
+    const after = this._sourceSnapshot(live)
+    if (before !== null && after !== before) return
+
+    if (pending === true) {
+      throw new ApplyRefusal('UPDATE_REJECTED', `${this._cfg.noun} update was rejected by this world (hook veto or invalid data)`)
+    }
+  }
+
+  /** The live doc's raw source as a comparable string, or null when it cannot be read. */
+  _sourceSnapshot(live) {
+    try {
+      return live?._source ? JSON.stringify(live._source) : null
+    } catch {
+      return null
+    }
+  }
+
+  /**
+   * Would this payload change the document? `true`/`false`, or `null` when we cannot tell.
+   *
+   * `updateSource(changes, {dryRun: true})` is exactly what Foundry runs one line above its
+   * own `if (options.diff && foundry.utils.isEmpty(diff)) continue` — reusing it is what keeps
+   * this judgement from being a second, divergent notion of "changed". `clean: true` mirrors
+   * that call too, so a value the schema would coerce (a `"0"` the model stores as `0`) is not
+   * mistaken for a pending change and reported as a rejection forever.
+   */
+  _payloadWouldChange(live, payload) {
+    if (typeof live?.updateSource !== 'function') return null
+    try {
+      // A clone, because `updateSource` cleans and `_preUpdateSource` may rewrite its input.
+      const changes = foundry?.utils?.deepClone ? foundry.utils.deepClone(payload) : { ...payload }
+      const diff = live.updateSource(changes, { dryRun: true, clean: true })
+      return !!diff && typeof diff === 'object' && Object.keys(diff).length > 0
+    } catch {
+      return true // validation would throw, which Foundry catches and drops: a real change lost
     }
   }
 
