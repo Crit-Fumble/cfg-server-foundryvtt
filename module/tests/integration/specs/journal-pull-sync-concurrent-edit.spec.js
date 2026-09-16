@@ -287,8 +287,11 @@ test.describe('Journal pull-sync vs concurrent world edits (cs#417 H3)', () => {
     expect(after.sourceCount).toBe(1)
   })
 
-  // cs#417 · EXPECTED TO FAIL until rec 2 (server-named removals) lands. When it does,
-  // DELETE the `test.fail()` line ABOVE THE FINAL BLOCK of this body — nothing else changes.
+  // cs#417 · REGRESSION GUARD. This FAILED until rec 2 (server-named removals) landed on
+  // 2026-09-15 — a page the GM added was deleted for being absent from the platform array.
+  // It passes now, and goes red again if a delete is ever inferred rather than named.
+  // ⚠️ The two repros BELOW are still marked: they are UPDATE overwrites, which rec 2 does
+  // not touch. They need rec 1 (child clock check) and rec 3 (ownership create-only).
   test('a page the GM ADDED in Foundry survives the next tick', async ({ page }) => {
     await runTick(page, [planItem()])
 
@@ -316,8 +319,6 @@ test.describe('Journal pull-sync vs concurrent world edits (cs#417 H3)', () => {
     // second tick really ran, and it is the guard against a bad fix, because protecting the
     // GM's page by dropping the whole update is not a fix.
     expect(after.name).toBe('The Drained Library')
-
-    test.fail()
     // THE OUTCOME A PLAYER CARES ABOUT: the notes are still there.
     expect(after.pageIds).toContain(gmPageId)
     expect(after.pageNames).toContain(GM_PAGE_NAME)

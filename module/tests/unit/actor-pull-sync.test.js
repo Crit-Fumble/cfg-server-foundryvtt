@@ -163,7 +163,11 @@ describe('ActorPullSync — update', () => {
   it('updates the parent without items/effects and reconciles them separately', async () => {
     const live = liveActor({ itemIds: ['itemOLD00000000A'] })
     seedActors({ [ACTOR_ID]: live })
-    const a = api([planItem({ everPushed: true })])
+    // ⚠️ This test used to end `expect(live.deleteEmbeddedDocuments).toHaveBeenCalledWith('Item',
+    // ['itemOLD00000000A'])` with NO `removedEmbedded` on the item — i.e. it pinned the cs#417
+    // set-difference bug as the desired behaviour. The delete is now the server's call, so the
+    // id has to be NAMED to be taken away; the rest of the reconciliation split is unchanged.
+    const a = api([planItem({ everPushed: true, removedEmbedded: { items: ['itemOLD00000000A'] } })])
     await new ActorPullSync(a, 'inst-1').tick()
 
     // Embedded collections merge by _id through a parent update and never REMOVE —
@@ -217,6 +221,153 @@ describe('ActorPullSync — update', () => {
 
     expect(live.delete).toHaveBeenCalled()
     expect(globalThis.Actor.create).toHaveBeenCalledWith(expect.objectContaining({ type: 'character' }), { keepId: true })
+  })
+})
+
+describe('ActorPullSync — server-named embedded removals (cs#417 rec 2)', () => {
+  // REPRODUCED LIVE 2026-09-15 (cfs PR #33): an Item a player drops on their sheet, an
+  // ActiveEffect a spell applies, a page a GM adds to a journal and tokens/walls a GM places
+  // were all destroyed by the next 30s tick, because `_reconcileEmbedded` derived deletions as
+  // `liveIds - platformIds`. Foundry NEVER deletes an embedded document through a parent
+  // update — `EmbeddedCollectionField._updateDiff` matches by `_id` and creates the unmatched —
+  // so "the platform removed it" and "a player just created it" arrive as the same fact, and
+  // subtraction always chose destruction. The server now names removals; nothing else goes.
+
+  it('leaves a live child the server did NOT name alone — the player-dropped item survives', async () => {
+    const live = liveActor({ itemIds: ['itemAAAAAAAAAAAA', 'itemPLAYERDROP01'] })
+    seedActors({ [ACTOR_ID]: live })
+    // The platform's view still lists only the Dagger; the second item appeared at the table
+    // between two ticks. The server removed nothing, so it says so with an empty list.
+    const a = api([planItem({ everPushed: true, removedEmbedded: { items: [], effects: [] } })])
+    await new ActorPullSync(a, 'inst-1').tick()
+
+    expect(live.deleteEmbeddedDocuments).not.toHaveBeenCalled()
+  })
+
+  it('deletes a live child the server DID name', async () => {
+    const live = liveActor({ itemIds: ['itemAAAAAAAAAAAA', 'itemOLD00000000A'] })
+    seedActors({ [ACTOR_ID]: live })
+    const a = api([planItem({ everPushed: true, removedEmbedded: { items: ['itemOLD00000000A'] } })])
+    await new ActorPullSync(a, 'inst-1').tick()
+
+    // Named AND live — exactly that id, and only that id.
+    expect(live.deleteEmbeddedDocuments).toHaveBeenCalledTimes(1)
+    expect(live.deleteEmbeddedDocuments).toHaveBeenCalledWith('Item', ['itemOLD00000000A'])
+  })
+
+  it('deletes NOTHING when `removedEmbedded` is absent entirely (older core)', async () => {
+    // The fail-safe, and the reason it is deliberate: this module ships on its own release
+    // channel and may reach a world before core learns to send the field. "Stop deleting" is
+    // the safe direction — a genuine platform removal just stops propagating until core ships.
+    const live = liveActor({ itemIds: ['itemAAAAAAAAAAAA', 'itemOLD00000000A'], effectIds: ['effSTALE000001A'] })
+    seedActors({ [ACTOR_ID]: live })
+    const a = api([planItem({ everPushed: true })]) // no removedEmbedded key at all
+    await new ActorPullSync(a, 'inst-1').tick()
+
+    expect(live.deleteEmbeddedDocuments).not.toHaveBeenCalled()
+    expect(a.ackActorSync.mock.calls[0][3][0].ok).toBe(true) // and the tick still succeeds
+  })
+
+  it('names one collection without touching the other — the key is per-collection', async () => {
+    // `removedEmbedded` is keyed by DOCDATA FIELD (`items`, `effects`, `pages`, `tokens`, …).
+    // A key present for one collection says nothing about a collection it omits.
+    //
+    // ⚠️ `effects: []` in docData IS the test (cs#417 follow-up). This case used to omit
+    // `effects` entirely, which made it GREEN AGAINST THE PRE-CHANGE set-difference code too:
+    // that code returned early on `!Array.isArray(desired)`, so the effect was spared by
+    // "not managed", not by the per-collection key. A MANAGED-BUT-EMPTY array is the one shape
+    // where subtraction deletes every live child, so it is the only fixture in which the
+    // fail-safe is the sole thing standing between the server's silence and that effect.
+    const live = liveActor({ itemIds: ['itemAAAAAAAAAAAA', 'itemOLD00000000A'], effectIds: ['effSTALE000001A'] })
+    seedActors({ [ACTOR_ID]: live })
+    const a = api([
+      planItem({
+        everPushed: true,
+        removedEmbedded: { items: ['itemOLD00000000A'] }, // no `effects` key at all
+        docData: {
+          _id: ACTOR_ID,
+          name: 'Aria Brightwood',
+          type: 'character',
+          items: [{ _id: 'itemAAAAAAAAAAAA', name: 'Dagger', type: 'weapon' }],
+          effects: [], // the platform models effects and currently has none
+        },
+      }),
+    ])
+    await new ActorPullSync(a, 'inst-1').tick()
+
+    expect(live.deleteEmbeddedDocuments).toHaveBeenCalledTimes(1)
+    expect(live.deleteEmbeddedDocuments).toHaveBeenCalledWith('Item', ['itemOLD00000000A'])
+    // The effect is stale by subtraction and untouched by name — which is the whole point.
+    expect(live.deleteEmbeddedDocuments).not.toHaveBeenCalledWith('ActiveEffect', expect.anything())
+  })
+
+  it('re-creates, never updates, a child the plan both removes and still lists', async () => {
+    // A contradictory plan item should not happen, but if the server names an id in
+    // `removedEmbedded` while `docData` still carries it, the delete runs first — and the
+    // create/update split must be computed AFTER it (cs#417). Splitting on the pre-delete
+    // `haveIds` would route the id to updateEmbeddedDocuments, against a child that no longer
+    // exists, and fail the whole document for a state the create path recovers from.
+    const live = liveActor({ itemIds: ['itemAAAAAAAAAAAA', 'itemOLD00000000A'] })
+    seedActors({ [ACTOR_ID]: live })
+    const a = api([
+      planItem({
+        everPushed: true,
+        removedEmbedded: { items: ['itemOLD00000000A'] },
+        docData: {
+          _id: ACTOR_ID,
+          name: 'Aria Brightwood',
+          type: 'character',
+          items: [
+            { _id: 'itemAAAAAAAAAAAA', name: 'Dagger', type: 'weapon' },
+            { _id: 'itemOLD00000000A', name: 'Contradiction', type: 'weapon' },
+          ],
+        },
+      }),
+    ])
+    await new ActorPullSync(a, 'inst-1').tick()
+
+    expect(live.deleteEmbeddedDocuments).toHaveBeenCalledWith('Item', ['itemOLD00000000A'])
+    expect(live.createEmbeddedDocuments).toHaveBeenCalledWith('Item', [expect.objectContaining({ _id: 'itemOLD00000000A' })], { keepId: true })
+    expect(live.updateEmbeddedDocuments).not.toHaveBeenCalledWith('Item', expect.arrayContaining([expect.objectContaining({ _id: 'itemOLD00000000A' })]))
+  })
+
+  it('is a no-op for a named id that is not live — no throw, no empty delete call', async () => {
+    // The GM got there first, or an earlier tick already applied it. Intersecting the server's
+    // list with what is actually live keeps a stale name harmless instead of an error ack.
+    const live = liveActor({ itemIds: ['itemAAAAAAAAAAAA'] })
+    seedActors({ [ACTOR_ID]: live })
+    const a = api([planItem({ everPushed: true, removedEmbedded: { items: ['itemGHOST00000A1'] } })])
+    await new ActorPullSync(a, 'inst-1').tick()
+
+    expect(live.deleteEmbeddedDocuments).not.toHaveBeenCalled()
+    expect(a.ackActorSync.mock.calls[0][3][0].ok).toBe(true)
+  })
+
+  it('still creates and updates embedded children exactly as before', async () => {
+    // The fix must narrow DELETION only. A child the platform added is still created with
+    // keepId, and one it edited is still updated — both alongside a named removal.
+    const live = liveActor({ itemIds: ['itemAAAAAAAAAAAA', 'itemOLD00000000A'] })
+    seedActors({ [ACTOR_ID]: live })
+    const a = api([
+      planItem({
+        everPushed: true,
+        removedEmbedded: { items: ['itemOLD00000000A'] },
+        docData: {
+          _id: ACTOR_ID,
+          name: 'Aria Brightwood',
+          type: 'character',
+          items: [
+            { _id: 'itemAAAAAAAAAAAA', name: 'Dagger +1', type: 'weapon' },
+            { _id: 'itemBBBBBBBBBBBB', name: 'Shield', type: 'equipment' },
+          ],
+        },
+      }),
+    ])
+    await new ActorPullSync(a, 'inst-1').tick()
+
+    expect(live.updateEmbeddedDocuments).toHaveBeenCalledWith('Item', [expect.objectContaining({ _id: 'itemAAAAAAAAAAAA', name: 'Dagger +1' })])
+    expect(live.createEmbeddedDocuments).toHaveBeenCalledWith('Item', [expect.objectContaining({ _id: 'itemBBBBBBBBBBBB' })], { keepId: true })
+    expect(live.deleteEmbeddedDocuments).toHaveBeenCalledWith('Item', ['itemOLD00000000A'])
   })
 })
 

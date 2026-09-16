@@ -19,6 +19,18 @@
  *  3. EMBEDDED COLLECTIONS merge by `_id` through a parent update and are NEVER removed by
  *     it. Items, effects, journal pages, scene tokens all need explicit reconciliation.
  *
+ *     ⛔ BUT RECONCILING BY SET-DIFFERENCE IS A DATA-LOSS BUG (cs#417 rec 2, reproduced
+ *     live 2026-09-15 in cfs PR #33). `toDelete = liveIds - platformIds` cannot tell "the
+ *     platform removed this" from "a player just created this", because Foundry never
+ *     deletes an embedded document through a parent update at all: its
+ *     `EmbeddedCollectionField._updateDiff` matches by `_id` and CREATES the unmatched. So
+ *     an Item or ActiveEffect a player added at the table, a page a GM added to a journal,
+ *     and tokens/walls a GM placed were all destroyed by the next 30s tick.
+ *
+ *     Removals are SERVER-NAMED instead: `item.removedEmbedded[<docData field>]` lists the
+ *     ids that were in the server's own `lastPushedData` and are gone from `docData`. The
+ *     module deletes those and nothing else.
+ *
  *  4. DELETION MARKERS come from the server's `removedPaths` and are merged NESTED into the
  *     payload — never derived here by diffing the live document. Diffing `live.toObject()`
  *     asks Foundry to delete every field the platform doesn't model (`_stats`,
@@ -30,6 +42,22 @@
  *  5. `everPushed` distinguishes "not created yet" from "the GM deleted it": absent +
  *     never-pushed → create; absent + already-pushed → report `world_deleted` so the server
  *     parks the row instead of resurrecting the document on every tick.
+ *
+ *  6. FAIL-SAFE ON `removedEmbedded` (cs#417 rec 2): the whole object absent (an older core
+ *     that does not send it yet), or the key absent for one collection, means DELETE NOTHING
+ *     for that collection. The module ships on its own release channel and may land before
+ *     core does, and "stop deleting" is the safe direction. Creates and updates are unchanged.
+ *
+ *     ⛔ THE COST IS NOT "DELAYED PROPAGATION" — IT IS THAT REMOVAL, LOST PERMANENTLY. A
+ *     platform-side removal made DURING the module-ahead-of-core window is acked `ok` like
+ *     any other write, and the server BASELINES the doc against what it pushed. The next
+ *     plan diffs the NEW baseline, finds it matches, and never re-plans the removal
+ *     (`doc-sync/plan.ts` skips a doc whose `diffKey` equals its `lastPushedData`), so the
+ *     child stays in the world forever — no later tick, and no core upgrade, brings it back.
+ *     Recovery is manual: delete the child in Foundry, or re-edit the doc on the platform so
+ *     it differs from the baseline again. Deleting nothing is still the right trade — a
+ *     stranded child is recoverable by hand, a destroyed player item is not — but the window
+ *     is a one-way loss, not a pause, so keep it short.
  *
  * Single-reporter election: the human GM with the smallest id does the work; the service-GM
  * only when it is the sole connected GM. A GM is required — creating documents and setting
@@ -112,6 +140,9 @@ export function withRemovals(fields, removedPaths) {
  * @property {(api, inst, world, system, results) => Promise<any>} ack
  * @property {Array<{name: string, field: string, of: (live: any) => any[], stripFields?: string[]}>} [embedded]
  *           embedded collections to reconcile, e.g. Item/`items`, ActiveEffect/`effects`.
+ *           `name` is the Foundry docName; `field` is the docData field the children arrive
+ *           in — and `field` is ALSO the key the server's `removedEmbedded` is keyed by
+ *           (cs#417 rec 2), so server-named removals needed no new config shape here.
  *           An entry's `stripFields` are deleted from every desired CHILD before any write —
  *           the embedded counterpart of the top-level knob below, needed because dangerous
  *           fields can live inside children too: `PlaylistSound.playing` is settable through
@@ -292,7 +323,9 @@ export class DocPullSync {
     await live.update(withRemovals(fields, item.removedPaths))
 
     for (const e of embedded) {
-      await this._reconcileEmbedded(live, e.name, e.of(live), docData[e.field])
+      // Removals are keyed by the DOCDATA FIELD (`items`, `effects`, `pages`, `tokens`, …),
+      // which is the same `e.field` the desired children are read from. See the header, fact 3.
+      await this._reconcileEmbedded(live, e.name, e.of(live), docData[e.field], item.removedEmbedded?.[e.field])
     }
   }
 
@@ -308,18 +341,35 @@ export class DocPullSync {
     await this._cfg.DocClass().create(docData, { keepId: true })
   }
 
-  /** Make an embedded collection match the platform's exactly — including deletions. */
-  async _reconcileEmbedded(parent, docName, liveCollection, desired) {
-    if (!Array.isArray(desired)) return // absent means "not managed", not "delete all"
-
-    const wantedIds = new Set(desired.map((d) => d?._id).filter(Boolean))
+  /**
+   * Create and update from the platform's children, and delete ONLY what the server NAMED.
+   *
+   * `removedIds` is `item.removedEmbedded[field]`. Anything that is not an array — the key
+   * absent, or `removedEmbedded` absent entirely on an older core — deletes nothing here.
+   * See the header, facts 3 and 6: subtracting the platform's ids from the live ones deleted
+   * every child a player or GM created between two ticks.
+   */
+  async _reconcileEmbedded(parent, docName, liveCollection, desired, removedIds) {
     const haveIds = new Set((liveCollection ?? []).map((d) => d.id))
+
+    // Deletions ride on the server's list alone, so they do NOT depend on `desired`: an id the
+    // platform named is gone from the platform whatever shape `docData` arrived in. Keeping
+    // only the ids that are actually live makes a name we have already lost a no-op, not a throw.
+    const toDelete = (Array.isArray(removedIds) ? removedIds : []).filter((id) => id && haveIds.has(id))
+    if (toDelete.length) {
+      await parent.deleteEmbeddedDocuments(docName, toDelete)
+      // A contradictory plan — an id named in `removedEmbedded` AND still listed in `docData`
+      // — would otherwise land in the UPDATE half below and fail against a child we just
+      // deleted, since `haveIds` was snapshotted before the delete (cs#417). Dropping the
+      // deleted ids sends it down the CREATE path instead, which is the recoverable side.
+      for (const id of toDelete) haveIds.delete(id)
+    }
+
+    if (!Array.isArray(desired)) return // absent means "not managed", not "delete all"
 
     const toCreate = desired.filter((d) => d?._id && !haveIds.has(d._id))
     const toUpdate = desired.filter((d) => d?._id && haveIds.has(d._id))
-    const toDelete = [...haveIds].filter((id) => !wantedIds.has(id))
 
-    if (toDelete.length) await parent.deleteEmbeddedDocuments(docName, toDelete)
     if (toUpdate.length) await parent.updateEmbeddedDocuments(docName, toUpdate)
     if (toCreate.length) await parent.createEmbeddedDocuments(docName, toCreate, { keepId: true })
   }

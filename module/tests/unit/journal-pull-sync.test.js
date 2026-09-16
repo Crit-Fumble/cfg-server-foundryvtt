@@ -121,19 +121,48 @@ describe('JournalPullSync', () => {
     expect(existing.update.mock.calls[0][0]).not.toHaveProperty('pages')
   })
 
-  it('DELETES a page removed on the platform', async () => {
+  it('DELETES a page the SERVER named as removed', async () => {
     // The reason pages are reconciled explicitly: updating an embedded collection
     // through the parent merges by _id and never removes, so a deleted page would
     // linger in the world forever.
+    //
+    // ⚠️ Until cs#417 this passed with no `removedEmbedded` at all — the page was deleted
+    // purely because the platform's array did not list it. That subtraction also deleted every
+    // page a GM added at the table (reproduced live 2026-09-15, cfs PR #33), so removals are
+    // now named by the server and a page it does not name stays put. See the test below.
     const existing = liveEntry(['pageAAAAAAAAAAAA', 'pageSTALESTALE01'])
     seedJournal({ [ENTRY_ID]: existing })
 
-    await new JournalPullSync(api([planItem()]), 'inst-1').tick()
+    await new JournalPullSync(api([planItem({ removedEmbedded: { pages: ['pageSTALESTALE01'] } })]), 'inst-1').tick()
 
     expect(existing.deleteEmbeddedDocuments).toHaveBeenCalledWith('JournalEntryPage', ['pageSTALESTALE01'])
     expect(existing.updateEmbeddedDocuments).toHaveBeenCalledWith('JournalEntryPage', [
       expect.objectContaining({ _id: 'pageAAAAAAAAAAAA' }),
     ])
+  })
+
+  it('KEEPS a page the GM added that the server did not name (cs#417 rec 2)', async () => {
+    // The live repro, at unit altitude: the GM writes a session-notes page in Foundry, the
+    // platform's array still lists only the Overview, and the next tick used to take the new
+    // page away. `removedEmbedded.pages` is empty, so nothing is removed.
+    const existing = liveEntry(['pageAAAAAAAAAAAA', 'pageGMWROTE00001'])
+    seedJournal({ [ENTRY_ID]: existing })
+
+    await new JournalPullSync(api([planItem({ removedEmbedded: { pages: [] } })]), 'inst-1').tick()
+
+    expect(existing.deleteEmbeddedDocuments).not.toHaveBeenCalled()
+  })
+
+  it('deletes nothing when `removedEmbedded` is absent entirely (older core)', async () => {
+    // Fail-safe: the module may reach a world before core sends the field, and "stop deleting"
+    // is the safe direction — a genuine platform removal simply waits for core to ship.
+    const existing = liveEntry(['pageAAAAAAAAAAAA', 'pageSTALESTALE01'])
+    seedJournal({ [ENTRY_ID]: existing })
+
+    await new JournalPullSync(api([planItem()]), 'inst-1').tick()
+
+    expect(existing.deleteEmbeddedDocuments).not.toHaveBeenCalled()
+    expect(existing.updateEmbeddedDocuments).toHaveBeenCalled() // the rest of the tick still ran
   })
 
   it('creates a new page with keepId', async () => {

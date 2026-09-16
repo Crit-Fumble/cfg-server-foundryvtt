@@ -266,8 +266,10 @@ test.describe('Scene sync vs. a GM editing the live scene (cs#417)', () => {
     expect(after.wallClocks).toEqual([null, null])
   })
 
-  // ⚠️ cs#417 — EXPECTED FAILURE while the courier deletes children it never pushed.
-  // TO REMOVE: delete the inline `test.fail()` call below the moment the fix lands —
+  // ⚠️ cs#417 — REGRESSION GUARD. This FAILED until the platform stopped sending scene
+  // contents at all (rec 4, owner decision 2026-09-15: scenes are view-only on external
+  // surfaces). It passes now, and goes red again if any embedded collection is re-added to
+  // the pushed doc — which no clock could make safe, since scene children have no `_stats`.
   // Playwright reports a marked test that PASSES as a failure, which is that signal.
   test('tokens the GM dropped after the last push SURVIVE a platform rename', async ({ page }) => {
     const { adopted, drops, live } = await adoptThenGmEdits(page)
@@ -283,8 +285,6 @@ test.describe('Scene sync vs. a GM editing the live scene (cs#417)', () => {
     // GM's two tokens. `everPushed` + `lastPushedData` say so in the plan.
     const res = await runTick(page, [planItem({ everPushed: true, docData: { name: 'Sunken Vault (Renamed)' } })])
 
-    // Everything above must SUCCEED; only the assertion below is expected to fail today.
-    test.fail()
 
     // The outcome a player cares about: the tokens they placed are still on the scene.
     // (The rename landing is asserted in the control below, deliberately NOT here — a marked
@@ -292,8 +292,10 @@ test.describe('Scene sync vs. a GM editing the live scene (cs#417)', () => {
     for (const id of drops.tokenIds) expect(res.tokenIds).toContain(id)
   })
 
-  // ⚠️ cs#417 — EXPECTED FAILURE while the courier deletes children it never pushed.
-  // TO REMOVE: delete the inline `test.fail()` call below the moment the fix lands.
+  // ⚠️ cs#417 — REGRESSION GUARD. This FAILED until the platform stopped sending scene
+  // contents at all (rec 4, owner decision 2026-09-15: scenes are view-only on external
+  // surfaces). It passes now, and goes red again if any embedded collection is re-added to
+  // the pushed doc — which no clock could make safe, since scene children have no `_stats`.
   // Kept separate from the token case on purpose: a fix that handles tokens but forgets the
   // other seven collections leaves this one failing, and one combined test would hide that.
   test('a wall the GM drew after the last push SURVIVES a platform rename', async ({ page }) => {
@@ -309,8 +311,6 @@ test.describe('Scene sync vs. a GM editing the live scene (cs#417)', () => {
     // GM's new wall is an id the platform array has never seen.
     const res = await runTick(page, [planItem({ everPushed: true, docData: { name: 'Sunken Vault (Renamed)' } })])
 
-    // Everything above must SUCCEED; only the assertion below is expected to fail today.
-    test.fail()
 
     for (const id of drops.wallIds) expect(res.wallIds).toContain(id)
   })

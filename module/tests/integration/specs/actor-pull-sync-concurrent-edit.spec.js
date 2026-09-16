@@ -204,8 +204,9 @@ test.describe('Actor pull-sync vs a concurrent in-world edit (cs#417 H1)', () =>
     expect(withEffect.effectIds).toContain(PLAYER_EFFECT)
   })
 
-  // cs#417 H1 — EXPECTED TO FAIL until the module deletes only server-named removals.
-  // When that lands, delete the `test.fail()` line below and keep the test.
+  // cs#417 H1 — REGRESSION GUARD. This FAILED until rec 2 (server-named removals) landed on
+  // 2026-09-15; it passes now and goes red again the moment a courier infers a delete from
+  // the live collection instead of deleting only what the server named.
   test('an Item the player added in Foundry SURVIVES a platform tick that never knew about it', async ({ page }) => {
     // 1. The platform pushes the character. The world now matches: one Dagger.
     await runTick(page, [planItem()])
@@ -224,10 +225,6 @@ test.describe('Actor pull-sync vs a concurrent in-world edit (cs#417 H1)', () =>
     // happened. A world where the axe was never created would "reproduce" the bug for free.
     expect(live.itemIds).toContain(PLAYER_ITEM)
 
-    // `test.fail()` sits here, not at the top: Playwright applies the annotation from wherever
-    // it is called, so anything above this line fails NORMALLY and a broken setup can never be
-    // mistaken for the expected failure.
-    test.fail()
 
     // The platform's own item was not collateral damage — checked first, so the claim is
     // genuinely tested and the marked failure still comes from the player's item below.
@@ -236,8 +233,9 @@ test.describe('Actor pull-sync vs a concurrent in-world edit (cs#417 H1)', () =>
     expect(res.itemIds).toContain(PLAYER_ITEM)
   })
 
-  // cs#417 H1 — EXPECTED TO FAIL until the module deletes only server-named removals.
-  // When that lands, delete the `test.fail()` line below and keep the test.
+  // cs#417 H1 — REGRESSION GUARD. This FAILED until rec 2 (server-named removals) landed on
+  // 2026-09-15; it passes now and goes red again the moment a courier infers a delete from
+  // the live collection instead of deleting only what the server named.
   test('an ActiveEffect the player picked up in Foundry SURVIVES the same tick', async ({ page }) => {
     // Effects are the second reconciled collection on an Actor, and they lose the same way —
     // separately asserted so a fix that repairs `items` and forgets `effects` is still red.
@@ -250,8 +248,6 @@ test.describe('Actor pull-sync vs a concurrent in-world edit (cs#417 H1)', () =>
 
     // Precondition first, for the same reason as the Item repro: no effect, no reproduction.
     expect(live.effectIds).toContain(PLAYER_EFFECT)
-
-    test.fail()
 
     expect(res.effectIds).toContain(PLAYER_EFFECT)
   })
