@@ -412,9 +412,11 @@ test.describe('Journal pull-sync vs concurrent world edits (cs#417 H3)', () => {
   // NEITHER case here carries `platformChangedAt` — ownership is not clock-compared. See
   // `alreadyPushed`: absent must read as "no baseline, APPLY", never as "skip".
 
-  // cs#417 · EXPECTED TO FAIL until ownership stops being pushed on every write (send it
-  // when the platform's visibility actually changed). When fixed, DELETE the `test.fail()`
-  // line ABOVE THE FINAL BLOCK of this body — nothing else here changes.
+  // cs#417 · REGRESSION GUARD. This FAILED until rec 3 landed on 2026-09-16: core rebuilt
+  // `ownership` from the `visibility` column on EVERY push, so any write — a rename, a page
+  // edit — re-asserted the platform's permission map over the GM's. Not a race; it reverted
+  // every time. Core now PRUNES ownership/sort/folder from a push whose baseline already
+  // agrees on them, which is why `renamed` below carries four keys and not seven.
   test('a permission the GM set in Foundry survives a platform push of something else', async ({ page }) => {
     await runTick(page, [planItem()]) // adopt-time ownership: GM-only
 
@@ -429,17 +431,23 @@ test.describe('Journal pull-sync vs concurrent world edits (cs#417 H3)', () => {
     await gmSetsOwnership(page, { default: 2 })
     expect((await snapshot(page)).ownership).toMatchObject({ default: 2 })
 
-    // The platform pushes a RENAME. Its docData still carries the adopt-time ownership,
-    // because materializeJournalDocForWorld rebuilds it from `visibility` every time — and
-    // `visibility` has not changed, so the baseline and the desired doc agree on it.
-    await runTick(page, [alreadyPushed(planItem({ docData: { name: 'The Drained Library' } }))])
+    // The platform pushes a RENAME — in the shape core ACTUALLY sends since rec 3. The
+    // materializer still rebuilds the full doc (it is the comparand for change detection),
+    // but `buildJournalSyncPlan` then PRUNES any of ownership/sort/folder the baseline
+    // already agrees on, and `visibility` has not changed. So the module is handed four
+    // keys, and the fields it is not given are fields it cannot revert — Foundry merges.
+    // The pruning itself is pinned core-side in
+    // cfg-core-server tests/unit/services/foundry/journal-sync-plan.test.ts; what this
+    // asserts is the OUTCOME at the table.
+    const renamed = alreadyPushed(planItem({ docData: { name: 'The Drained Library' } }))
+    for (const field of ['ownership', 'sort', 'folder']) delete renamed.docData[field]
+    await runTick(page, [renamed])
 
     const after = await snapshot(page)
-    // PRECONDITION AGAIN, above the marker: the second tick really ran, and a fix that
-    // spares the GM's permission by dropping the whole update is not a fix.
+    // The second tick really ran — a fix that spared the GM's permission by dropping the
+    // whole update would not be a fix, and this is what tells the two apart.
     expect(after.name).toBe('The Drained Library')
 
-    test.fail()
     // THE OUTCOME A PLAYER CARES ABOUT: they can still read the entry.
     expect(after.ownership).toMatchObject({ default: 2 })
   })
