@@ -325,12 +325,3 @@ export class useMyData {
 }
 ```
 
----
-
-## Phase Gating
-
-All Phase 2+ code is marked `// TODO(phase-2):` and removed from the plugin. Phase 1 is the clean baseline. When enabling a new phase, grep:
-
-```bash
-grep -r "TODO(phase-2):" scripts/
-```

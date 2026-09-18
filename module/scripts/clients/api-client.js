@@ -365,7 +365,7 @@ export class CoreAPIClient {
    * compendium packs so their documents are readable (and later editable) on the platform (dt#185).
    *
    * ONLY packs Foundry marks `packageType === 'world'` may be sent. Module packs (licensed
-   * rulebooks, Plutonium, …) belong to their publisher, and the platform stores mirrored packs with an
+   * rulebooks, third-party modules, …) belong to their publisher, and the platform stores mirrored packs with an
    * `origin` that asserts provenance — sending one would make that claim false. The server
    * re-checks and refuses, but the filter belongs here too: do not widen it.
    *
