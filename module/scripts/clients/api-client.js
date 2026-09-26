@@ -33,10 +33,16 @@ export class CoreAPIClient {
   /**
    * @param {string} baseUrl — e.g. 'https://core.crit-fumble.com'
    * @param {string|null} [apiKey] — CFG API key (cfk_...) for self-hosted mode; null for core-hosted
+   * @param {{ renewKey?: (rejected: string|null) => Promise<string|null>, onRenewed?: (accepted: boolean) => void }} [options]
+   *   cs#414: `renewKey` answers a 401 with a fresh key or null; `onRenewed` hears whether core then accepted it
+   *   (`renewSeatKey` / `settleSeatKeyRenewal` in host-context.js)
    */
-  constructor(baseUrl, apiKey = null) {
+  constructor(baseUrl, apiKey = null, { renewKey = null, onRenewed = null } = {}) {
     this.baseUrl = (baseUrl || 'https://core.crit-fumble.com').replace(/\/$/, '')
     this.apiKey = apiKey || null
+    this._renewKey = renewKey
+    this._onRenewed = onRenewed
+    this._candidate = null
   }
 
   // ── Request primitives ────────────────────────────────────────────────────
@@ -67,7 +73,34 @@ export class CoreAPIClient {
     }
   }
 
+  /**
+   * One request, retried ONCE with a renewed key when core answers 401 (cs#414): a seat
+   * key lives 12h, a Foundry session is one page load. The key sent is captured first, so
+   * a call whose 401 lands after another call swapped a fresh key in retries with that
+   * instead of asking again. A renewed key is a CANDIDATE until a request MADE WITH IT gets
+   * a 2xx (accepted) or a 401 (refused); old-key calls still in flight say nothing about it.
+   */
   async _request(endpoint, options = {}) {
+    const sentKey = this.apiKey
+    const res = this._settle(await this._send(endpoint, options), sentKey)
+    if (res.status !== 401 || !this._renewKey) return res
+    let fresh = this.apiKey
+    if (fresh === sentKey) fresh = this._candidate = await this._renewKey(sentKey)
+    if (!fresh || fresh === sentKey) return res
+    this.apiKey = fresh
+    return this._settle(await this._send(endpoint, options), fresh)
+  }
+
+  _settle(res, sentKey) {
+    // A 5xx (core restarting behind Caddy) or a 403 says nothing about the key: stays pending.
+    if (this._candidate && sentKey === this._candidate && (res.ok || res.status === 401)) {
+      this._candidate = null
+      this._onRenewed?.(res.ok)
+    }
+    return res
+  }
+
+  async _send(endpoint, options = {}) {
     const url = `${this.baseUrl}${endpoint}`
     const timeout = options.timeout ?? DEFAULT_TIMEOUT
     const retries = options.retries ?? MAX_RETRIES
