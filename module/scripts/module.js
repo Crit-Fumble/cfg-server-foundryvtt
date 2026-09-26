@@ -32,7 +32,7 @@ import { CoreAPIClient } from './clients/api-client.js'
 import { CfgCampaignLinksDialog } from './views/cfg-campaign-links.js'
 import { FilePickerCompat } from './utils/file-picker-compat.js'
 import { registerCfgLinkMenu } from './views/cfg-link-settings.js'
-import { applyHostedContext, getHostKind, resolveCoreEndpoint, readSeatKey } from './auth/host-context.js'
+import { applyHostedContext, getHostKind, resolveCoreEndpoint, readSeatKey, renewSeatKey, settleSeatKeyRenewal } from './auth/host-context.js'
 import { mountConnectionBanner } from './views/connection-banner.js'
 import { maybeShowFirstRunPrompt } from './views/first-run-prompt.js'
 import { syncInstalledModules } from './sync/modules-sync.js'
@@ -536,8 +536,9 @@ Hooks.once('ready', async () => {
   const apiKey = readSeatKey() || game.settings.get(MODULE_ID, 'apiKey') || null
 
   // apiKey set → Bearer token (installation key or self-hosted pair). Null →
-  // same-origin session-cookie auth (cfg-hosted non-owner GM fallback).
-  _api = new CoreAPIClient(apiUrl, apiKey)
+  // same-origin session-cookie auth (cfg-hosted non-owner GM fallback). A 401 renews
+  // the seat key and retries once (cs#414): the key lives 12h, a session is one page load.
+  _api = new CoreAPIClient(apiUrl, apiKey, { renewKey: renewSeatKey, onRenewed: settleSeatKeyRenewal })
   window.CFGCore.api = _api
   console.log(`CFG Core | Auth mode: ${apiKey ? 'self-hosted (API key)' : 'core-hosted (session cookie)'}`)
 
@@ -550,7 +551,7 @@ Hooks.once('ready', async () => {
   // Report system to each linked campaign and link this Foundry user to their
   // platform account in parallel. These two stay on the critical path: feature
   // mode gates what mounts below, and the user link is what SSO'd players wait on.
-  await Promise.allSettled([_resolveFeatureMode(), _linkPlatformUser(apiUrl, apiKey)])
+  await Promise.allSettled([_resolveFeatureMode(), _linkPlatformUser()])
 
   if (game.user.isGM) {
     // #339 — POST `game.modules` to CFG so the platform UI can list what's
@@ -757,11 +758,9 @@ Hooks.once('ready', async () => {
 
   // Report the loaded world to CFG so the platform's Server Manager UI
   // can show "running — <World> loaded" instead of the stale FOUNDRY_WORLD
-  // env it used to read. The platform routes installation resolution
-  // through the player's API key; on core-hosted (no apiKey) the session
-  // cookie covers it. Non-fatal — the platform falls back to "loading…"
+  // env it used to read. Non-fatal — the platform falls back to "loading…"
   // and the 15-min safety net re-converges.
-  _reportWorldLoaded(apiKey).catch((err) => {
+  _reportWorldLoaded().catch((err) => {
     console.warn('CFG Core | world-load callback failed (non-fatal):', err)
   })
 
@@ -781,37 +780,21 @@ Hooks.once('ready', async () => {
  * idempotent on the server side (repeated POSTs for the same world just
  * refresh `loadedAt`).
  *
- * Auth: the client-scoped `apiKey` (set by the pair flow on self-hosted,
- * by `applyHostedContext` on cfg-hosted) goes in as a Bearer token. When
- * absent we let the request through with whatever auth the iframe /
- * session cookie provides — the platform falls back to session-cookie
- * identity in that path.
+ * Through `_api`, the courier client (cs#414): same endpoint, same key, same
+ * cookie rule, and a keyless boot renews its seat key before giving up. It was a
+ * raw fetch that asked for cookies whenever it had no key — which CORS refuses
+ * cross-origin — so every keyless load lost this report, pluginVersion included.
+ * That is why nobody could tell which module version ran in the 2026-09-26 outage.
  */
-async function _reportWorldLoaded(apiKey) {
-  if (!game.world?.id) return
-  const apiUrl = game.settings.get(MODULE_ID, 'coreApiUrl')
-  if (!apiUrl) return
-  const url = `${apiUrl.replace(/\/+$/, '')}/api/v1/foundry/worlds/${encodeURIComponent(game.world.id)}/status`
-  const headers = { 'content-type': 'application/json' }
-  if (apiKey) headers['authorization'] = `Bearer ${apiKey}`
-  const res = await fetch(url, {
-    method: 'POST',
-    headers,
-    // ⛔ Sending a Bearer AND asking for cookies is self-defeating cross-origin
-    // (cs#391): core withholds `Access-Control-Allow-Credentials` for the
-    // Foundry origin, so `credentials: 'include'` makes the browser reject the
-    // response even though the Bearer alone would have authenticated it. Same
-    // rule the API client already follows — a key means cookies are neither
-    // needed nor allowed to ride along.
-    ...(apiKey ? {} : { credentials: 'include' }),
+async function _reportWorldLoaded() {
+  if (!game.world?.id || !_api) return
+  await _api.post(`/api/v1/foundry/worlds/${encodeURIComponent(game.world.id)}/status`, {
+    status: 'ready',
     // pluginVersion rides the heartbeat so the platform's fleet report
     // (dt#268/dt#183) knows what each world actually RUNS — the installed
     // files on disk are not evidence of the running version.
-    body: JSON.stringify({ status: 'ready', pluginVersion: MODULE_VERSION() }),
+    pluginVersion: MODULE_VERSION(),
   })
-  if (!res.ok) {
-    throw new Error(`world-load callback returned HTTP ${res.status}`)
-  }
 }
 
 /* -------------------------------------------- */
@@ -898,21 +881,18 @@ async function _resolveFeatureMode() {
 /**
  * Link this Foundry user to their Core platform account.
  *
- * Auth source:
- *   - cfg-hosted Foundry: the same-origin session cookie identifies the
- *     caller automatically (no apiKey on the request).
- *   - Self-hosted Foundry: the client-scoped apiKey set by the pair flow
- *     (Module Settings → Crit-Fumble Link). When absent, the call is
- *     anonymous and silently no-ops.
+ * Auth: `_api`, the courier client — its key and its cs#414 renewal. A client of
+ *   its own here kept the key `ready` started with, so a keyless boot lost the link
+ *   even after an earlier call had renewed.
  *
  * On success: stores platformUserId in a user flag and broadcasts the
  *   platformUserId↔foundryUserId mapping so other clients can build
  *   their identity maps.
  */
-async function _linkPlatformUser(apiUrl, apiKey) {
-  const api = new CoreAPIClient(apiUrl, apiKey)
+async function _linkPlatformUser() {
+  if (!_api) return
   try {
-    const data = await api.get('/api/v1/account/user')
+    const data = await _api.get('/api/v1/account/user')
     const platformUserId = data?.user?.id
     if (!platformUserId) return
 

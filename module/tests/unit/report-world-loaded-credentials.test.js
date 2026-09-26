@@ -1,82 +1,64 @@
 /**
- * The world-load heartbeat must not ask for cookies when it is sending a Bearer
- * (cs#391).
+ * The world-load report rides the courier client (cs#414, after cs#391).
  *
- * `_reportWorldLoaded` set `credentials: 'include'` UNCONDITIONALLY, alongside an
- * `Authorization` header. Same-origin that was merely redundant. Cross-origin it
- * is fatal, and in a way the Bearer cannot rescue: core deliberately withholds
- * `Access-Control-Allow-Credentials` for the Foundry origin — that withholding IS
- * the origin separation, since it is what stops a GM-installed module spending a
- * visitor's session — so the browser rejects the response before reading it. The
- * request was authenticated and still failed.
+ * `_reportWorldLoaded` used to be a raw fetch with a credential rule of its own. cs#391
+ * found it sending `credentials: 'include'` beside a Bearer, which the browser rejects
+ * cross-origin because core withholds `Access-Control-Allow-Credentials` for the Foundry
+ * origin; the fix made cookies conditional on having NO key. That still asked for
+ * cookies whenever the page was keyless — refused cross-origin just the same — so in
+ * the 2026-09-26 outage every keyless page lost the report, `pluginVersion` included,
+ * and nobody could tell which module version had actually run.
  *
- * ⚠️ This file exists because the fix was mutation-checked and NOTHING went red:
- * restoring the unconditional `credentials: 'include'` left the suite green. A
- * fix no test can see is one refactor away from being undone.
+ * It now calls `_api.post`, so the key, the cookie rule and the cs#414 renewal are the
+ * client's own, pinned in clients/api-client.test.js and seat-key-renewal.test.js.
+ * `_linkPlatformUser` had the same shape (a client of its own, built from the key
+ * `ready` started with) and moved with it. This file pins the routing.
  *
- * Mirrors the function rather than importing it — module.js is one big import
- * with ~30 side effects — and the second describe pins the mirror to the real
- * source, the same technique as purge-legacy-world-api-key.test.js.
+ * Pinned against the source rather than imported: module.js is one big import with ~30
+ * side effects — the same technique as purge-legacy-world-api-key.test.js.
  */
-import { jest } from '@jest/globals'
 import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-/** The credential half of `_reportWorldLoaded`, mirrored. */
-function buildInit(apiKey) {
-  const headers = { 'content-type': 'application/json' }
-  if (apiKey) headers['authorization'] = `Bearer ${apiKey}`
-  return {
-    method: 'POST',
-    headers,
-    ...(apiKey ? {} : { credentials: 'include' }),
-    body: JSON.stringify({ status: 'ready' }),
-  }
+const SOURCE = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../../scripts/module.js'), 'utf8')
+
+/** The body of a top-level function in module.js, up to its closing brace. */
+function bodyOf(name) {
+  const start = SOURCE.indexOf(`async function ${name}(`)
+  if (start === -1) return null
+  return SOURCE.slice(start, SOURCE.indexOf('\n}\n', start))
 }
 
-describe('_reportWorldLoaded credential mode', () => {
-  it('with a Bearer: cookies are OMITTED, not merely unused', async () => {
-    const init = buildInit('cfk_seat_abc')
-    expect(init.headers.authorization).toBe('Bearer cfk_seat_abc')
-    // The whole point: `credentials` must be ABSENT, so fetch defaults to
-    // same-origin and the cross-origin preflight is never asked for cookies.
-    expect(init.credentials).toBeUndefined()
+describe('_reportWorldLoaded rides the courier client', () => {
+  const body = bodyOf('_reportWorldLoaded')
+
+  it('the function exists', () => {
+    expect(body).not.toBeNull()
   })
 
-  it('with no Bearer: falls back to the session cookie (same-origin hosted)', async () => {
-    const init = buildInit(null)
-    expect(init.headers.authorization).toBeUndefined()
-    expect(init.credentials).toBe('include')
+  it('posts the world status through _api', () => {
+    expect(body).toMatch(/_api\.post\(`\/api\/v1\/foundry\/worlds\/\$\{encodeURIComponent\(game\.world\.id\)\}\/status`/)
   })
 
-  it('never sends BOTH — that combination is what the browser rejects', async () => {
-    for (const key of ['cfk_seat_abc', 'cfk_paired', null]) {
-      const init = buildInit(key)
-      const hasBearer = !!init.headers.authorization
-      const asksForCookies = init.credentials === 'include'
-      expect(hasBearer && asksForCookies).toBe(false)
-    }
+  it('⛔ makes no request of its own and picks no credential mode', () => {
+    // A raw fetch here is the regression: it cannot renew, and it has to invent a
+    // cookie rule the client already gets right.
+    expect(body).not.toMatch(/\bfetch\(/)
+    expect(body).not.toMatch(/credentials/)
+    expect(body).not.toMatch(/authorization/i)
+  })
+
+  it('still reports the version that is actually running', () => {
+    expect(body).toMatch(/pluginVersion: MODULE_VERSION\(\)/)
   })
 })
 
-describe('the mirror matches module.js', () => {
-  const SOURCE = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../../scripts/module.js'), 'utf8')
-  const start = SOURCE.indexOf('async function _reportWorldLoaded')
-  const body = SOURCE.slice(start, start + 1600)
+describe('_linkPlatformUser rides it too', () => {
+  const body = bodyOf('_linkPlatformUser')
 
-  it('the function exists', () => {
-    expect(start).toBeGreaterThan(-1)
-  })
-
-  it('sets the Bearer from the resolved key', () => {
-    expect(body).toMatch(/headers\['authorization'\] = `Bearer \$\{apiKey\}`/)
-  })
-
-  it('⛔ makes credentials CONDITIONAL on there being no key', () => {
-    // The regression guard. An unconditional `credentials: 'include'` here is
-    // the exact bug, and it is invisible to every other test in this repo.
-    expect(body).toMatch(/\.\.\.\(apiKey \? \{\} : \{ credentials: 'include' \}\)/)
-    expect(body).not.toMatch(/^\s*credentials: 'include',\s*$/m)
+  it('uses _api, not a client built from the key `ready` started with', () => {
+    expect(body).toMatch(/_api\.get\('\/api\/v1\/account\/user'\)/)
+    expect(body).not.toMatch(/new CoreAPIClient/)
   })
 })
