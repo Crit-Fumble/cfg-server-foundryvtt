@@ -65,6 +65,8 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
+          # sha-<short> and the revision label come from the checked-out commit, not github.sha (a dispatch's branch head) — dt#670.
+          context: git
           images: ghcr.io/crit-fumble/cfg-server-foundryvtt
           tags: |
             type=ref,event=tag
@@ -128,6 +130,8 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
+          # sha-<short> and the revision label come from the checked-out commit, not github.sha (a dispatch's branch head) — dt#670.
+          context: git
           images: ghcr.io/crit-fumble/cfg-foundry-service-gm
           tags: |
             type=ref,event=tag
