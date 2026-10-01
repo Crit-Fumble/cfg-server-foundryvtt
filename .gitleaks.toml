@@ -93,9 +93,12 @@ description = "Genuinely empty assignments: KEY=, KEY: \"\", export KEY=''"
 # Tested against the whole LINE, anchored at both ends WITHOUT (?m) and with no
 # \s: the line must be nothing but a key and an empty value. A match spanning
 # lines (KEY= then the value on the next line) is a multi-line Line, so it is
-# NOT exempt. This keeps the old '=\s*$' entry's stated intent without its
+# NOT exempt. gitleaks 8.30.1 hands a line-2+ match its preceding '\n' as part of
+# the line, and a CRLF line ends in '\r'; the optional \n? and \r? cover both, so the
+# exemption works on every line, not only the first.
+# This keeps the old '=\s*$' entry's stated intent without its
 # blind spot.
 regexTarget = "line"
 regexes = [
-  '''^[ \t]*(?:export[ \t]+)?["']?[A-Za-z_][\w.-]*["']?[ \t]*(?::=|[:=])[ \t]*(?:""|'')?[ \t]*,?[ \t]*$''',
+  '''^\n?[ \t]*(?:export[ \t]+)?["']?[A-Za-z_][\w.-]*["']?[ \t]*(?::=|[:=])[ \t]*(?:""|'')?[ \t]*,?[ \t]*\r?$''',
 ]

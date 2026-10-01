@@ -94,6 +94,10 @@ regex = '''(?:PROBE_KEY|probeKey)["']?[ \\t]*[:=]'''
 `)
     const ok = ['PROBE_KEY=', 'export PROBE_KEY=', "PROBE_KEY=''", 'PROBE_KEY: ""', '  "probeKey": "",', 'PROBE_KEY := ']
     for (const line of ok) assert.deepEqual(scan({ 'a.env': `${line}\n` }, probe).findings, [], line)
+    // Line 2+ and CRLF: gitleaks prefixes a line-2+ match with its '\\n', and a CRLF line ends in '\\r'.
+    assert.deepEqual(scan({ 'a.env': `FOO=bar\n${ok.join('\n')}\n` }, probe).findings, [], 'empty keys on line 2+')
+    assert.deepEqual(scan({ 'a.env': `${ok.join('\r\n')}\r\n` }, probe).findings, [], 'CRLF')
+    assert.equal(scan({ 'a.env': 'FOO=bar\nPROBE_KEY=x\n' }, probe).findings.length, 1, 'a value on line 2 is still flagged')
     for (const line of ['PROBE_KEY=x', '"probeKey": "v",', 'PROBE_KEY= # set me']) {
       assert.equal(scan({ 'a.env': `${line}\n` }, probe).findings.length, 1, line)
     }
