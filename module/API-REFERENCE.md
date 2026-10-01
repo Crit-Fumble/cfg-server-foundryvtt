@@ -494,5 +494,5 @@ Set your API token in module settings:
 ## Support
 
 - **API Docs**: https://core.crit-fumble.com/api/docs
-- **GitHub** (current): https://github.com/Crit-Fumble/cfg-core-server (server) · https://github.com/Crit-Fumble/cfg-core-browser (browser app). The old monorepo at `Crit-Fumble/core.crit-fumble.com` is retired.
-- **Discord**: https://discord.gg/D6vVANEJ3w
+- **GitHub**: https://github.com/Crit-Fumble/cfg-server-foundryvtt (this module and the hosted FoundryVTT image) · [issues](https://github.com/Crit-Fumble/cfg-server-foundryvtt/issues)
+- **Discord**: https://core.crit-fumble.com/join (join the community server, then sign in to the platform)
