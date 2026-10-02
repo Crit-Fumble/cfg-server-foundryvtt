@@ -1,26 +1,27 @@
 /**
- * Self-hosted auth — when an API key is set, the plugin authenticates to Core
- * with `Authorization: Bearer cfk_...` (no session cookie). globalSetup injects
- * the key, so the module boots in self-hosted mode.
+ * API key (Bearer) auth — when an API key is set, the plugin authenticates to
+ * Core with `Authorization: Bearer cfk_...` (no session cookie). globalSetup
+ * injects the key, so the module boots in Bearer mode — the same path a hosted
+ * world takes with its seat key or installation key.
  */
 
 import { test, expect } from '@playwright/test'
 import { ensureInGame } from '../shared/foundry-login.mjs'
 import { API_KEY } from '../shared/world-fixture.mjs'
 
-test.describe('Self-hosted API key auth', () => {
+test.describe('API key (Bearer) auth', () => {
   test.beforeEach(async ({ page }) => {
     await ensureInGame(page)
     await page.waitForFunction(() => window.CFGCore, { timeout: 30_000 })
   })
 
-  test('CFGCore.api carries the API key in self-hosted mode', async ({ page }) => {
+  test('CFGCore.api carries the API key in Bearer mode', async ({ page }) => {
     test.skip(!API_KEY, 'Requires CORE_TEST_API_KEY')
     const key = await page.evaluate(() => window.CFGCore?.api?.apiKey)
     expect(key).toBe(API_KEY)
   })
 
-  test('auth mode logs as self-hosted', async ({ page }) => {
+  test('auth mode logs as Bearer key', async ({ page }) => {
     test.skip(!API_KEY, 'Requires CORE_TEST_API_KEY')
     const logs = []
     page.on('console', (msg) => {
@@ -29,7 +30,7 @@ test.describe('Self-hosted API key auth', () => {
     await page.reload()
     await page.waitForSelector('#sidebar', { timeout: 30_000 })
     await page.waitForFunction(() => window.game?.ready, { timeout: 30_000 })
-    expect(logs.some((l) => l.includes('self-hosted'))).toBe(true)
+    expect(logs.some((l) => l.includes('Bearer key'))).toBe(true)
   })
 
   test('requests send the Authorization Bearer header', async ({ page }) => {

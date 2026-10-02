@@ -17,9 +17,9 @@
  *   - The proxy MUST inject this object before any Foundry script tag runs,
  *     so `Hooks.once('init')` sees it on its first read.
  *   - All four fields are required; partial contexts are rejected and the
- *     plugin falls back to the self-hosted pair flow.
- *   - The apiKey is server-minted with the same scope as a user-paired key;
- *     the plugin treats it identically once stored.
+ *     plugin falls back to the URL-path detection below.
+ *   - The apiKey is server-minted (the owner's installation key); the plugin
+ *     treats it like any other stored key.
  *
  * URL-path fallback (#699 follow-up): the `__CFG_HOSTED_CONTEXT__` injection
  * is not yet implemented on the proxy. Until it lands, the only signal a
@@ -28,14 +28,13 @@
  * created via Foundry's OWN setup UI (not the CFG create-world flow) has no
  * injected global and no stored apiKey, yet it is still cfg-hosted by virtue of
  * the route it's served on. We therefore treat that path prefix as a
- * cfg-hosted signal too — without it, such worlds wrongly fall through to the
- * self-hosted pair prompt. Self-hosted / third-party Foundry never serves on
+ * cfg-hosted signal too — without it, such worlds are wrongly read as
+ * self-hosted. Self-hosted / third-party Foundry never serves on
  * this prefix, so the fallback can't misclassify a BYO instance.
  *
  * `getHostedContext()` (the auto-link auth payload) still requires the full
  * injected global — the path alone can't mint an apiKey. Only `getHostKind()`
- * honours the path fallback, which is exactly what gates the first-run prompt
- * and the link-settings buttons.
+ * honors the path fallback.
  *
  * Detection is one-shot — the kind is captured into module state on the first
  * read so a tampered global (or a later history.pushState) can't downgrade it.
@@ -370,8 +369,8 @@ export function getHostedContext() {
  * Returns 'cfg-hosted' when the injected global is present and well-formed,
  * OR when the page is served under the cfg-hosted proxy route
  * (`/servers/foundryvtt/<installationId>/...`); 'self-hosted' otherwise. The
- * host kind is the discriminator the rest of the plugin (first-run prompt,
- * settings menu, pair flow, banner) branches on.
+ * ready hook branches on it (applyHostedContext), and `CFGCore.hostKind()`
+ * exposes it publicly.
  *
  * @returns {HostKind}
  */

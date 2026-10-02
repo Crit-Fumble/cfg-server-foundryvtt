@@ -362,7 +362,7 @@ describe('CoreAPIClient — a 401 renews and retries once', () => {
     globalThis.fetch = jest.fn().mockResolvedValue(unauthorized())
     const api = new CoreAPIClient('https://core.crit-fumble.com', DEAD, { renewKey: async () => null })
 
-    await expect(api.get('/api/v1/x')).rejects.toThrow('Invalid or expired CFG API key')
+    await expect(api.get('/api/v1/x')).rejects.toThrow('Your Crit-Fumble sign-in for this world has expired')
     expect(globalThis.fetch).toHaveBeenCalledTimes(1)
   })
 
@@ -528,7 +528,7 @@ describe('CoreAPIClient — a 401 renews and retries once', () => {
     globalThis.fetch = jest.fn().mockResolvedValue(unauthorized())
     const api = new CoreAPIClient('https://core.crit-fumble.com', DEAD)
 
-    await expect(api.get('/api/v1/x')).rejects.toThrow('Invalid or expired CFG API key')
+    await expect(api.get('/api/v1/x')).rejects.toThrow('Your Crit-Fumble sign-in for this world has expired')
     expect(globalThis.fetch).toHaveBeenCalledTimes(1)
   })
 })

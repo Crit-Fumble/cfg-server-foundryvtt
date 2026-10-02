@@ -57,7 +57,7 @@ export function createMockApiClient(overrides = {}) {
 export function createUnauthorizedApiClient(mode = 'session') {
   const message =
     mode === 'apikey'
-      ? 'Invalid or expired CFG API key. Regenerate it in your Core account settings.'
+      ? 'Your Crit-Fumble sign-in for this world has expired. Reload the page to reconnect.'
       : 'Not logged in to Core. Open core.crit-fumble.com in your browser and sign in.'
 
   const reject = jest.fn().mockRejectedValue(new Error(message))

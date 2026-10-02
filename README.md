@@ -17,7 +17,8 @@ The platform's Foundry module lives here too — **CFG Server Manager**, module 
 their enable flag in `core.moduleConfiguration` keyed by id, so changing it
 orphans every world's setting). It carries campaign linking, runtime player
 provisioning, the world↔platform document sync couriers, and session reporting —
-for CFG-hosted **and** self-hosted worlds alike. It was extracted from
+for worlds Crit-Fumble hosts. Connecting a world you host yourself is not
+currently supported. It was extracted from
 `cfg-foundry-plugin` at module 2.48.3; the **3D overlay** went to
 `cfg-app-playtable` as the separate **`cfg-playtable`** module (2026-08-16), and
 `cfg-foundry-plugin` is now archived — nothing "stays behind" there.

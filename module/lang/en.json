@@ -28,7 +28,6 @@
     },
     "Sync": {
       "NotInitialized": "Sync service not initialized",
-      "ConfigureToken": "Configure API token in settings",
       "Success": "Synced successfully",
       "Failed": "Sync failed",
       "InProgress": "Syncing..."
@@ -43,7 +42,6 @@
       "Importing": "Importing...",
       "Loading": "Loading locations...",
       "NoLocations": "No locations found",
-      "NoApi": "Core API not configured. Set your API token in module settings.",
       "ImportError": "Failed to import location as scene. Check console for details.",
       "SceneCreated": "Scene \"{name}\" created!",
       "Page": "Page",

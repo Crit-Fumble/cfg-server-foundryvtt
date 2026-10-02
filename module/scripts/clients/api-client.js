@@ -1,22 +1,22 @@
 /**
  * CFG Core API Client
  *
- * Handles all communication with the Core platform from within the FoundryVTT
- * container. Supports two authentication modes:
+ * Handles all communication with the Core platform from within a Crit-Fumble
+ * hosted FoundryVTT world. Supports two authentication modes:
  *
- *   Core-hosted  — Foundry is embedded in the Core platform. Authentication uses
- *                  the browser's existing session cookie (credentials: 'include').
- *                  No API key needed; the session cookie is included automatically.
+ *   Session cookie — core is this page's own origin. Authentication uses the
+ *                    browser's existing session cookie (credentials: 'include').
+ *                    No key needed; the cookie is included automatically.
  *
- *   Self-hosted  — Foundry runs on the GM's own server. Authentication uses a
- *                  CFG API key (cfk_...) generated in the user's Core account
- *                  settings and stored as a Foundry world setting. The key is
- *                  sent as `Authorization: Bearer cfk_...` on every request.
+ *   Bearer key     — the hosted seat key, or the installation owner's key, both
+ *                    set automatically by the module on a hosted world (see
+ *                    host-context.js). The key is sent as
+ *                    `Authorization: Bearer cfk_...` on every request.
  *
  * Usage:
- *   // Core-hosted (no key)
+ *   // Session cookie (no key)
  *   const api = new CoreAPIClient('https://core.crit-fumble.com')
- *   // Self-hosted (API key)
+ *   // Bearer key
  *   const api = new CoreAPIClient('https://core.crit-fumble.com', 'cfk_yourkey')
  *   const data = await api.get('/api/v1/player/campaigns/my-campaign/quests')
  *   const { foundry } = await api.getFoundryStatus('my-campaign') // featureMode, etc.
@@ -32,7 +32,7 @@ const MAX_RETRIES = 2
 export class CoreAPIClient {
   /**
    * @param {string} baseUrl — e.g. 'https://core.crit-fumble.com'
-   * @param {string|null} [apiKey] — CFG API key (cfk_...) for self-hosted mode; null for core-hosted
+   * @param {string|null} [apiKey] — CFG API key (cfk_...) for Bearer mode; null for session-cookie auth
    * @param {{ renewKey?: (rejected: string|null) => Promise<string|null>, onRenewed?: (accepted: boolean) => void }} [options]
    *   cs#414: `renewKey` answers a 401 with a fresh key or null; `onRenewed` hears whether core then accepted it
    *   (`renewSeatKey` / `settleSeatKeyRenewal` in host-context.js)
@@ -107,15 +107,15 @@ export class CoreAPIClient {
     const { timeout: _t, retries: _r, binary: _b, ...fetchOpts } = options
 
     // Binary requests (sourcebook page images) carry no JSON Content-Type — on a
-    // self-hosted (cross-origin) install that header forces a CORS preflight for
+    // cross-origin world that header forces a CORS preflight for
     // every page flip, and there is no body for it to describe.
     const headers = {
       ...(options.binary ? {} : { 'Content-Type': 'application/json' }),
       ...(fetchOpts.headers ?? {}),
     }
 
-    // Self-hosted: send API key as Bearer token; no session cookie needed.
-    // Core-hosted: rely on session cookie via credentials: 'include'.
+    // Key set: send it as a Bearer token; no session cookie needed.
+    // No key: rely on the session cookie via credentials: 'include'.
     if (this.apiKey) {
       headers['Authorization'] = `Bearer ${this.apiKey}`
     }
@@ -178,7 +178,7 @@ export class CoreAPIClient {
     if (res.status === 401) {
       throw new Error(
         this.apiKey
-          ? 'Invalid or expired CFG API key. Regenerate it in your Core account settings.'
+          ? 'Your Crit-Fumble sign-in for this world has expired. Reload the page to reconnect.'
           : 'Not logged in to Core. Open core.crit-fumble.com in your browser and sign in.',
       )
     }

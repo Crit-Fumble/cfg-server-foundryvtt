@@ -15,7 +15,7 @@
  *   - Character sheet write-back, Core → live actor (UPDATE-only; it cannot
  *     create an actor — fp#46)
  *   - Party journal sync, Core → live world (JournalPullSync, GM-only, #184)
- *   - Connection banner + first-run pair prompt
+ *   - Connection banner (offline pill)
  *
  * NOT present, though older docs claimed them: party roster, session tracker,
  * campaign filter, chat unification, quest sync, the iframe VTT bridge. Those
@@ -31,10 +31,8 @@
 import { CoreAPIClient } from './clients/api-client.js'
 import { CfgCampaignLinksDialog } from './views/cfg-campaign-links.js'
 import { FilePickerCompat } from './utils/file-picker-compat.js'
-import { registerCfgLinkMenu } from './views/cfg-link-settings.js'
 import { applyHostedContext, getHostKind, resolveCoreEndpoint, readSeatKey, renewSeatKey, settleSeatKeyRenewal } from './auth/host-context.js'
 import { mountConnectionBanner } from './views/connection-banner.js'
-import { maybeShowFirstRunPrompt } from './views/first-run-prompt.js'
 import { syncInstalledModules } from './sync/modules-sync.js'
 import { syncSystemSchemas } from './sync/system-schema-sync.js'
 import { ActivityHeartbeat } from './services/activity-heartbeat.js'
@@ -181,10 +179,10 @@ window.CFGCore = {
 /* -------------------------------------------- */
 
 /**
- * Default for `coreApiUrl`: the production platform. Self-hosters change it in
- * Module Settings (or via `window.CORE_API_URL` at the register site); a
- * cfg-hosted world gets the platform-declared `cfg_core_endpoint` cookie value
- * written over it by the ready-hook auto-correct on its first GM load.
+ * Default for `coreApiUrl`: the production platform (a dev stack can override it
+ * via `window.CORE_API_URL` at the register site). A cfg-hosted world gets the
+ * platform-declared `cfg_core_endpoint` cookie value written over it by the
+ * ready-hook auto-correct on its first GM load.
  *
  * ⛔ This used to answer `window.location.origin` on a `/servers/foundryvtt/`
  * path, which was core only while hosted worlds were served from core. Since
@@ -205,10 +203,10 @@ function _detectDefaultCoreApiUrl() {
  * `/servers/foundryvtt/{installationId}/...`. Reading the path is the
  * cheapest + most reliable way to get the installation id — no
  * dependency on the proxy injecting `__CFG_HOSTED_CONTEXT__` (which is
- * stubbed for a future commit) or on the pair-flow having run.
+ * stubbed for a future commit).
  *
- * Returns null for self-hosted Foundry or when the URL doesn't match
- * the cfg-hosted route shape.
+ * Returns null on a world Crit-Fumble does not host, or when the URL
+ * doesn't match the cfg-hosted route shape.
  */
 function _detectInstallationIdFromUrl() {
   if (typeof window === 'undefined') return null
@@ -231,9 +229,11 @@ Hooks.once('init', () => {
 
   game.settings.register(MODULE_ID, 'coreApiUrl', {
     name: 'CFG Endpoint',
-    hint: 'Crit-Fumble platform endpoint. Self-hosters change this; everyone else leaves the default.',
+    hint: 'Set automatically on Crit-Fumble hosted worlds. Leave as is.',
     scope: 'world',
-    config: true,
+    // Hidden from the settings UI: the ready hook writes it on hosted worlds,
+    // and connecting a world Crit-Fumble does not host is not currently supported.
+    config: false,
     type: String,
     default: window.CORE_API_URL || _detectDefaultCoreApiUrl(),
   })
@@ -245,8 +245,9 @@ Hooks.once('init', () => {
   // single source of truth; plugin-side flows that need a campaign id
   // iterate over the linked set returned by /api/v1/account/foundry/campaigns.
 
-  // Set automatically by the pair flow (#698). Hidden from the settings UI
-  // so users can't paste in arbitrary strings; clear it via Unlink instead.
+  // Set automatically on cfg-hosted worlds by applyHostedContext() (the
+  // installation owner's key). Hidden from the settings UI so users can't paste
+  // in arbitrary strings.
   //
   // ⛔ CLIENT SCOPE IS LOAD-BEARING — DO NOT CHANGE IT BACK TO 'world'.
   // This setting previously used `scope: 'world'`, justified by a comment
@@ -261,11 +262,9 @@ Hooks.once('init', () => {
   // write-back, scene/macro sync) all run in a connected GM's own tab and
   // read it from there, so they are unaffected.
   //
-  // ⚠️ Consequence for SELF-HOSTED worlds, stated because it is a real cost
-  // and not a bug report: the pair flow writes this key once, and client
-  // scope means it does not follow a GM to another browser or device — they
-  // pair again there. cfg-hosted worlds pay nothing, because
-  // applyHostedContext() re-fetches the key from core on every load.
+  // Client scope costs cfg-hosted worlds nothing: applyHostedContext()
+  // re-fetches the key from core on every load, in whichever browser the GM
+  // uses.
   //
   // Foundry v14 also offers `scope: 'user'` (per-user, stored server-side),
   // which would keep persistence AND privacy. It is NOT used here: the
@@ -281,8 +280,8 @@ Hooks.once('init', () => {
     default: '',
   })
 
-  // Optional installation ID returned by the pair flow once the server-side
-  // schema work in #700 lands. Not user-visible.
+  // Installation id, auto-set from the hosted route path by the ready hook.
+  // Not user-visible.
   game.settings.register(MODULE_ID, 'installationId', {
     scope: 'world',
     config: false,
@@ -290,28 +289,11 @@ Hooks.once('init', () => {
     default: '',
   })
 
-  // First-run pair prompt suppression flag (#571). When the GM clicks
-  // "Don't Show Again" on the in-plugin prompt, this flag stops it firing on
-  // future world loads. Hidden from the settings UI — the dialog itself is
-  // the only way to set it; clearing happens automatically on a successful
-  // Link Now click so a future Unlink + reload re-surfaces the prompt.
-  game.settings.register(MODULE_ID, 'firstRunPromptDismissed', {
-    scope: 'world',
-    config: false,
-    type: Boolean,
-    default: false,
-  })
-
   // Host-environment detection (#699): when Foundry is cfg-hosted, the plugin
   // fetches its installation host key programmatically and stores it as the
   // Bearer `apiKey` setting. That runs in the `ready` hook (awaited, before the
   // API client is built) — see `applyHostedContext()` — so settings are live and
-  // the key is in place before the first heartbeat. Self-hosted / third-party
-  // Foundry uses the original pair-button flow inside the menu.
-  // Always register the link-menu surface — it renders Link/Unlink for
-  // self-hosted, and a read-only "Linked via CFG-hosted Foundry container"
-  // row for cfg-hosted (the buttons are hidden, see cfg-link-settings.js).
-  registerCfgLinkMenu()
+  // the key is in place before the first heartbeat.
 
   /**
    * Per-campaign officer position configuration (preset + requireLeader flag).
@@ -451,8 +433,8 @@ Hooks.once('ready', async () => {
   // or the Foundry host itself on a world seeded by the pre-cs#414 default — and
   // the platform-declared `cfg_core_endpoint` cookie (minted on both edges) is
   // what corrects it. The installationId derives from the page path so the
-  // plugin doesn't depend on `__CFG_HOSTED_CONTEXT__` injection or the
-  // pair-flow having run. Idempotent: only writes on actual change, GM-only.
+  // plugin doesn't depend on `__CFG_HOSTED_CONTEXT__` injection. Idempotent:
+  // only writes on actual change, GM-only.
   try {
     if (isGM && onHostedPath) {
       // ⛔ Was `window.location.origin`. That is core ONLY while hosted Foundry is
@@ -524,10 +506,9 @@ Hooks.once('ready', async () => {
   // downgrades the POSTs to GET (cs#414), so it is not in the precedence at all.
   // The `||` is belt-and-braces: the resolver's own last step is this setting.
   const apiUrl = resolveCoreEndpoint().endpoint || game.settings.get(MODULE_ID, 'coreApiUrl')
-  // Both hosting modes read the same stored key: cfg-hosted gets an installation
-  // key from `applyHostedContext` (programmatic pairing) or, if that couldn't mint
-  // one, an empty value → session-cookie auth (same-origin). Self-hosted gets its
-  // paired key. An empty/absent setting → null → session-cookie auth.
+  // cfg-hosted gets an installation key from `applyHostedContext` (programmatic
+  // pairing) or, if that couldn't mint one, an empty value → session-cookie auth
+  // (same-origin). An empty/absent setting → null → session-cookie auth.
   // Seat key first: it is per-browser, short-lived and scoped to THIS seat, whereas
   // the `apiKey` world setting is the installation OWNER's key that every seated
   // player can read (cs#390). Once the platform sends a seat key, prefer it — and
@@ -535,12 +516,12 @@ Hooks.once('ready', async () => {
   // origin, where same-origin cookie auth stops working. Absent today → unchanged.
   const apiKey = readSeatKey() || game.settings.get(MODULE_ID, 'apiKey') || null
 
-  // apiKey set → Bearer token (installation key or self-hosted pair). Null →
+  // apiKey set → Bearer token (seat key or installation key). Null →
   // same-origin session-cookie auth (cfg-hosted non-owner GM fallback). A 401 renews
   // the seat key and retries once (cs#414): the key lives 12h, a session is one page load.
   _api = new CoreAPIClient(apiUrl, apiKey, { renewKey: renewSeatKey, onRenewed: settleSeatKeyRenewal })
   window.CFGCore.api = _api
-  console.log(`CFG Core | Auth mode: ${apiKey ? 'self-hosted (API key)' : 'core-hosted (session cookie)'}`)
+  console.log(`CFG Core | Auth mode: ${apiKey ? 'Bearer key' : 'session cookie'}`)
 
   // Resolve the campaigns linked to this Foundry world (N:M join, source of
   // truth lives in the platform DB). `_linkedCampaignIds` drives the
@@ -564,8 +545,8 @@ Hooks.once('ready', async () => {
 
   // Active-user heartbeat (cfs#109) — reports game.users.active to Core so
   // server-side idle-shutdown automation has a real signal. Only runs when
-  // this world is linked to an installation (cfg-hosted, or self-hosted
-  // after pairing); the single-reporter election lives inside the class.
+  // this world is linked to an installation (cfg-hosted, or a world paired by
+  // an older module); the single-reporter election lives inside the class.
   const heartbeatInstallId = game.settings.get(MODULE_ID, 'installationId') || null
   if (heartbeatInstallId) {
     _activityHeartbeat = new ActivityHeartbeat(_api, heartbeatInstallId)
@@ -586,7 +567,7 @@ Hooks.once('ready', async () => {
   // their sheets stay viewable on the web once this world goes offline. GM-only
   // (a GM sees all actors with full data); the single-reporter election lives in
   // the class. Runs for any linked world — installation key (cfg-hosted) OR a
-  // paired key (self-hosted), which is what makes self-hosted sheets viewable.
+  // key paired by an older module, which keeps such a world's sheets viewable.
   if ((heartbeatInstallId || apiKey) && game.user.isGM) {
     _worldActorSnapshot = new WorldActorSnapshot(_api)
     _staggerStart('actor-snapshot', () => _worldActorSnapshot.start())
@@ -747,14 +728,6 @@ Hooks.once('ready', async () => {
   // error branch. Local Foundry features keep working — the banner is purely
   // informational.
   mountConnectionBanner()
-
-  // First-run pair prompt (#571). Self-hosted / third-party Foundry GMs see
-  // a one-tap "Link this world to CFG" dialog when the world has never been
-  // paired. Players, CFG-hosted worlds, already-linked worlds, and worlds
-  // where the GM clicked "Don't Show Again" are all skipped inside
-  // maybeShowFirstRunPrompt. The 1.5s defer lets Foundry's main UI land
-  // before our dialog steals focus.
-  setTimeout(() => maybeShowFirstRunPrompt(), 1500)
 
   // Report the loaded world to CFG so the platform's Server Manager UI
   // can show "running — <World> loaded" instead of the stale FOUNDRY_WORLD
