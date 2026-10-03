@@ -18,8 +18,9 @@
  *   - SELF-HOSTED worlds are not. Foundry decides whether an update exists by
  *     comparing the installed version against the manifest's. Ship a fix without
  *     bumping `version` and every self-hosted install stays on the old code
- *     forever, with Foundry cheerfully reporting it is up to date. The module's
- *     own description advertises self-hosted support, so this is a real audience.
+ *     forever, with Foundry cheerfully reporting it is up to date. Self-hosted
+ *     support is parked, but the manifest URL is public and installable by
+ *     anyone, so the audience is not zero.
  *
  * That is the house failure mode verbatim: not a red check, but a green one over
  * a thing that never happened. This repo has paid for version drift twice

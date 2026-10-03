@@ -1,6 +1,6 @@
 # CFG Foundry Plugin — Architecture
 
-Phase 1 plugin that connects a self-hosted or Core-hosted FoundryVTT world to the Crit-Fumble Core platform.
+Plugin that connects a Crit-Fumble-hosted FoundryVTT world to the Crit-Fumble Core platform.
 
 ---
 
@@ -64,8 +64,7 @@ packages/foundry-plugin/
 │   └── integration/              ← Playwright tests against live Foundry container
 │       ├── playwright.config.js
 │       ├── shared/               ← globalSetup, wait-for-foundry, auth.setup
-│       ├── core-hosted/          ← Tests for session-cookie auth mode
-│       └── self-hosted/          ← Tests for API key auth mode
+│       └── specs/
 │
 └── docs/                         ← Developer reference (this folder)
 ```
@@ -74,12 +73,12 @@ packages/foundry-plugin/
 
 ## Auth Modes
 
-The plugin supports two auth modes, selected automatically based on whether an API key is configured:
+The plugin supports two auth modes, selected automatically on a Crit-Fumble hosted world:
 
-| Mode        | Setting          | HTTP auth                         | When                                      |
-| ----------- | ---------------- | --------------------------------- | ----------------------------------------- |
-| Core-hosted | `apiKey` empty   | `credentials: 'include'` (cookie) | Foundry runs inside Core's iframe         |
-| Self-hosted | `apiKey = cfk_…` | `Authorization: Bearer cfk_…`     | Standalone Foundry with API key from Core |
+| Mode                | Credential                                   | HTTP auth                         | When                                   |
+| ------------------- | -------------------------------------------- | --------------------------------- | -------------------------------------- |
+| Same-origin cookie  | none (`apiKey` empty, no seat key)           | `credentials: 'include'` (cookie) | Core is the page's own origin          |
+| Hosted Bearer       | seat key, or the owner's installation key    | `Authorization: Bearer cfk_…`     | Core is cross-origin (the usual case)  |
 
 `CoreAPIClient` handles both transparently — callers always use the same named methods.
 

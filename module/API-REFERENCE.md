@@ -26,14 +26,7 @@ const apiClient = window.ROTFS.apiClient
 
 ## Authentication
 
-The API client is automatically initialized with your configured API token from module settings.
-
-```javascript
-// Check if API is initialized
-if (!window.CritFumbleCore.apiClient) {
-  ui.notifications.warn('API client not configured. Set your API token in module settings.')
-}
-```
+On a Crit-Fumble hosted world the module authenticates itself; there is no token to configure.
 
 ---
 
@@ -482,12 +475,7 @@ try {
 
 ## Configuration
 
-Set your API token in module settings:
-
-1. Go to **Game Settings** → **Configure Settings**
-2. Find **Crit-Fumble Core** module
-3. Enter **Core API URL**: `https://core.crit-fumble.com`
-4. Enter **Core API Token**: Your personal API token
+Nothing to configure on a Crit-Fumble hosted world.
 
 ---
 

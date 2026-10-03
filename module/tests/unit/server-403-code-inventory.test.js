@@ -66,8 +66,8 @@
  *  5. A WRONG JUDGEMENT. Re-labelling a live rights code `dead-credential` or
  *     `rights-unhandled` with plausible prose stays green. The guard is against
  *     accidents, not against a bad call.
- *  6. THE CONSEQUENCE. Nothing here auto-re-pairs today (cfg-link-settings.js:
- *     "only the Unlink button ever clears the key") and the banner surfaces only
+ *  6. THE CONSEQUENCE. Nothing here auto-re-pairs today (the module has no pair
+ *     flow; applyHostedContext re-fetches the key on load) and the banner surfaces only
  *     `offline`, so a misclassification currently costs a worse message, not a
  *     loop. The loop is LATENT — it arrives the first time someone wires
  *     automatic re-pair to `auth-failed`, at which point every already-installed
@@ -217,6 +217,24 @@ const SERVER_403_CODES = {
     why:
       'routes/v1/public/foundry-auth.ts, mounted at POST /api/foundry/auth/validate — the Foundry SSO validate ' +
       'endpoint, called by the Foundry SERVER during login, never by this module. Lowercase by local convention.',
+  },
+
+  CASHOUT_FROZEN: {
+    handling: 'unreachable',
+    emitted: true,
+    unreachableBecause: 'route-not-called',
+    pathMarkers: ['/payments/'],
+    why: 'routes/v1/account/payments.ts, the Story Credit redeem/cash-out path. This module calls no payments route.',
+  },
+
+  SESSION_REVOKED: {
+    handling: 'unreachable',
+    emitted: true,
+    unreachableBecause: 'route-not-called',
+    pathMarkers: ['/discord/activity'],
+    why:
+      'routes/v1/discord/activity/session-routes.ts: a banned or suspended user refused a Discord Activity session. ' +
+      'This module calls no Activity route. (The 401 SESSION_REVOKED from plugins/auth.ts is not a 403.)',
   },
 }
 

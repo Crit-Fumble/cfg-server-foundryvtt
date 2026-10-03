@@ -190,10 +190,10 @@ describe('error handling', () => {
     await expect(api.get('/api/test')).rejects.toThrow('Not logged in to Core')
   })
 
-  test('401 self-hosted: friendly API key message', async () => {
+  test('401 with a Bearer key: friendly sign-in-expired message', async () => {
     const api = new CoreAPIClient('https://core.crit-fumble.com', 'cfk_bad')
     mockFetch.mockResolvedValueOnce(makeResponse(401))
-    await expect(api.get('/api/test')).rejects.toThrow('Invalid or expired CFG API key')
+    await expect(api.get('/api/test')).rejects.toThrow('Your Crit-Fumble sign-in for this world has expired')
   })
 
   test('403 throws permission error', async () => {

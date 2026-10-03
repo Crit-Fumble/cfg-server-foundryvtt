@@ -125,7 +125,7 @@ export class CfgCampaignLinksDialog extends foundry.applications.api.Application
 
     const sub = document.createElement('p')
     sub.style.cssText = 'margin: 0; font-size: 11px; opacity: 0.6;'
-    sub.textContent = `Installation: ${this.installationId ?? '— (not linked to a CFG account yet)'}`
+    sub.textContent = `Installation: ${this.installationId ?? '— (not a Crit-Fumble hosted world)'}`
     wrap.appendChild(sub)
     return wrap
   }
@@ -156,7 +156,7 @@ export class CfgCampaignLinksDialog extends foundry.applications.api.Application
       warn.style.cssText =
         'border: 1px solid rgba(245,158,11,0.4); background: rgba(120,53,15,0.25); color: #fde68a; padding: 8px 10px; border-radius: 4px; font-size: 13px;'
       warn.textContent =
-        'No CFG installation linked to this Foundry world yet. Link your account in Module Settings → Crit-Fumble Link first.'
+        'This world is not running on a Crit-Fumble hosted server, so campaigns cannot be linked to it.'
       wrap.appendChild(warn)
       return wrap
     }
