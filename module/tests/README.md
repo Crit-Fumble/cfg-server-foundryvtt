@@ -24,10 +24,10 @@ npm test              # jest — also run by the repo-root husky hooks and CI Ga
 
 ## Integration suite
 
-Drives the 19 specs in `integration/specs/` — the pull-sync families (actor,
-item, journal, folder, macro, scene, playlist, cards, rolltable), the JSON
-editor, API-key auth, the module contract, system-schema push/descriptor, quest
-sync and world/campaign links.
+Drives the specs in `integration/specs/` — the JSON editor, the document health
+probe, API-key auth, the module contract, the system-schema descriptor, quest
+sync and world/campaign links. (The pull-sync and snapshot specs went with the
+sync, 2026-10-03.)
 
 **One-time setup.** Copy `.env.test.example` to `.env.test` and fill it in.
 ⛔ Two of its keys are **host paths with no defaults** — `FOUNDRY_CACHE_DIR` and

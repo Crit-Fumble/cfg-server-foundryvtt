@@ -13,11 +13,11 @@
  *   3. A `class` carrying the SAME HitPoints advancement (with its `hd`) prepares cleanly, so the
  *      probe does not flag legitimate classes. This is the false-positive that would break every
  *      class in every world, so it is the most important assertion here.
- *   4. The write-back REFUSES the doomed conversion without deleting the live document — the
- *      delete-then-crash corruption the guard exists to prevent.
+ *   4. The apply (the JSON editor's save path) REFUSES the doomed conversion without deleting the
+ *      live document — the delete-then-crash corruption the guard exists to prevent.
  *
  * Foundry is real; there is no Core stack and no transport — the probe is a pure function and the
- * write-back is driven with a fake pack/entry. A failure here means dnd5e disagrees with us, not
+ * apply is driven against a throwaway pack. A failure here means dnd5e disagrees with us, not
  * that fixtures are unseeded.
  */
 
@@ -25,7 +25,7 @@ import { test, expect } from '@playwright/test'
 import { ensureInGame } from '../shared/foundry-login.mjs'
 
 const PROBE_URL = '/modules/crit-fumble-core/scripts/services/document-health-probe.js'
-const SYNC_URL = '/modules/crit-fumble-core/scripts/services/compendium-pull-sync.js'
+const APPLY_URL = '/modules/crit-fumble-core/scripts/services/document-apply.js'
 
 test.describe('Document health probe against real dnd5e', () => {
   test.beforeEach(async ({ page }) => {
@@ -79,11 +79,11 @@ test.describe('Document health probe against real dnd5e', () => {
     expect(result.feat).toEqual({ ok: true })
   })
 
-  test('the write-back refuses a doomed conversion without deleting the live document', async ({ page }) => {
+  test('the apply refuses a doomed conversion without deleting the live document', async ({ page }) => {
     const result = await page.evaluate(
-      async ({ syncUrl }) => {
+      async ({ applyUrl }) => {
         const bust = '?v=' + foundry.utils.randomID()
-        const { CompendiumPullSync } = await import(syncUrl + bust)
+        const { applyDesiredDocument } = await import(applyUrl + bust)
         const rid = () => foundry.utils.randomID()
 
         const packName = 'dt213-spec-' + rid().slice(0, 6)
@@ -104,10 +104,9 @@ test.describe('Document health probe against real dnd5e', () => {
           system: { classIdentifier: 'probe-class', advancement: cls.toObject().system.advancement },
         }
 
-        const svc = new CompendiumPullSync({})
         let threwName = null
         try {
-          await svc._applyEntry(pack, { foundryEntryId: cls.id, doc: badDoc })
+          await applyDesiredDocument(cls, CONFIG.Item.documentClass, { ...badDoc, _id: cls.id }, { collection: pack.collection })
         } catch (e) {
           threwName = e.name
         }
@@ -119,7 +118,7 @@ test.describe('Document health probe against real dnd5e', () => {
         await pack.deleteCompendium()
         return out
       },
-      { syncUrl: SYNC_URL },
+      { applyUrl: APPLY_URL },
     )
 
     expect(result.threwName).toBe('DocumentHealthError')

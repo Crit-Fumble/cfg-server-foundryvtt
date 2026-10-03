@@ -356,12 +356,6 @@ describe('named campaign methods', () => {
     expect(mockFetch.mock.calls[0][0]).toContain('/api/v1/player/campaigns/camp-1/foundry/config')
   })
 
-  test('getFoundryStatus() GETs /api/v1/player/campaigns/{id}/foundry', async () => {
-    await api.getFoundryStatus('camp-1')
-    expect(mockFetch.mock.calls[0][1].method).toBe('GET')
-    expect(mockFetch.mock.calls[0][0]).toContain('/api/v1/player/campaigns/camp-1/foundry')
-  })
-
   test('getParties() hits /api/v1/player/campaigns/{id}/parties', async () => {
     await api.getParties('camp-1')
     expect(mockFetch.mock.calls[0][0]).toContain('/api/v1/player/campaigns/camp-1/parties')
@@ -400,94 +394,5 @@ describe('named campaign methods', () => {
     expect(url).toContain('/api/v1/player/campaigns/camp-1/gm-assist')
     expect(opts.method).toBe('POST')
     expect(JSON.parse(opts.body).prompt).toBe('describe the dungeon')
-  })
-})
-
-// ── World actor mirror (cfs#17) ─────────────────────────────────────────────────
-
-describe('pushWorldActors', () => {
-  let api
-  beforeEach(() => {
-    api = new CoreAPIClient('https://core.crit-fumble.com')
-    mockFetch.mockResolvedValue(makeResponse(200, { ok: true }))
-  })
-
-  test('POSTs to /api/v1/foundry/worlds/{worldId}/actors with the body', async () => {
-    await api.pushWorldActors('my-world', { systemId: 'dnd5e', actors: [{ _id: 'a1', name: 'Hero' }] })
-    const [url, opts] = mockFetch.mock.calls[0]
-    expect(url).toBe('https://core.crit-fumble.com/api/v1/foundry/worlds/my-world/actors')
-    expect(opts.method).toBe('POST')
-    const body = JSON.parse(opts.body)
-    expect(body.systemId).toBe('dnd5e')
-    expect(body.actors).toEqual([{ _id: 'a1', name: 'Hero' }])
-  })
-
-  test('url-encodes the world id', async () => {
-    await api.pushWorldActors('world/with spaces', { reconcile: true, keepActorIds: [] })
-    expect(mockFetch.mock.calls[0][0]).toBe(
-      'https://core.crit-fumble.com/api/v1/foundry/worlds/world%2Fwith%20spaces/actors',
-    )
-  })
-})
-
-// ── Binary fetch (cs#212 sourcebook pages) ────────────────────────────────────
-
-describe('getBinary', () => {
-  let api
-
-  function makeBinaryResponse(status, blob) {
-    return {
-      ok: status >= 200 && status < 300,
-      status,
-      blob: jest.fn(async () => blob),
-      json: jest.fn(async () => ({ error: 'not_found' })),
-    }
-  }
-
-  beforeEach(() => {
-    api = new CoreAPIClient('https://core.crit-fumble.com')
-  })
-
-  test('returns the response blob on 200', async () => {
-    const fakeBlob = { size: 42, type: 'image/webp' }
-    mockFetch.mockResolvedValue(makeBinaryResponse(200, fakeBlob))
-    const blob = await api.getBinary('/api/v1/pages/1.webp')
-    expect(blob).toBe(fakeBlob)
-  })
-
-  test('omits Content-Type (a preflight trigger cross-origin) and sends Accept', async () => {
-    mockFetch.mockResolvedValue(makeBinaryResponse(200, {}))
-    await api.getBinary('/api/v1/pages/1.webp')
-    const [, opts] = mockFetch.mock.calls[0]
-    expect(opts.headers['Content-Type']).toBeUndefined()
-    expect(opts.headers['Accept']).toBe('image/webp,*/*')
-  })
-
-  test('core-hosted SAME-ORIGIN still rides the session cookie', async () => {
-    globalThis.window = { location: { origin: 'https://core.crit-fumble.com' } }
-    mockFetch.mockResolvedValue(makeBinaryResponse(200, {}))
-    await api.getBinary('/api/v1/pages/1.webp')
-    expect(mockFetch.mock.calls[0][1].credentials).toBe('include')
-  })
-
-  test('the sourcebook shelf CROSS-ORIGIN omits cookies too', async () => {
-    // Six of the module's paths are the licensed-rulebook page stream. They are
-    // the most visible thing a player loses when the credential path is wrong.
-    globalThis.window = { location: { origin: 'https://foundryvtt.crit-fumble.com' } }
-    mockFetch.mockResolvedValue(makeBinaryResponse(200, {}))
-    await api.getBinary('/api/v1/pages/1.webp')
-    expect(mockFetch.mock.calls[0][1].credentials).toBeUndefined()
-  })
-
-  test('self-hosted sends the Bearer key', async () => {
-    const keyed = new CoreAPIClient('https://core.crit-fumble.com', 'cfk_secret')
-    mockFetch.mockResolvedValue(makeBinaryResponse(200, {}))
-    await keyed.getBinary('/api/v1/pages/1.webp')
-    expect(mockFetch.mock.calls[0][1].headers['Authorization']).toBe('Bearer cfk_secret')
-  })
-
-  test('maps non-2xx through the friendly error path', async () => {
-    mockFetch.mockResolvedValue(makeBinaryResponse(404, null))
-    await expect(api.getBinary('/api/v1/pages/9.webp')).rejects.toThrow('Resource not found.')
   })
 })

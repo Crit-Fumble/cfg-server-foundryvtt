@@ -29,7 +29,6 @@ export function createMockApiClient(overrides = {}) {
     patch: jest.fn().mockResolvedValue({}),
     del: jest.fn().mockResolvedValue({}),
     request: jest.fn().mockResolvedValue({}),
-    getBinary: jest.fn().mockResolvedValue(new Blob()),
 
     // Named campaign methods
     getCampaign: jest.fn().mockResolvedValue({}),
