@@ -168,8 +168,8 @@ const SERVER_403_CODES = {
     emitted: true,
     why:
       'resolveCourierWorld (src/routes/v1/_lib/courier-auth.ts:146) sends it to every ' +
-      '/installations/:id/foundry/*-sync courier when the caller is not a world GM — routes this module ' +
-      'polls on a timer — plus six /account/game-world-* routes. The key is alive and the world-GM seat ' +
+      '/installations/:id/foundry/* courier route when the caller is not a world GM — pending-provisions, ' +
+      'which this module polls on a timer, among them — plus six /account/game-world-* routes. The key is alive and the world-GM seat ' +
       'is missing; re-pairing cannot grant a seat, so a re-pair is the wrong response. ' +
       '⚠️ This row was born as a KNOWN GAP: the test derived the server code set, found NOT_GM absent ' +
       'from FORBIDDEN_CODES, and printed it every run until it was promoted (2026-09-11). Recorded ' +
@@ -622,8 +622,8 @@ describeScan(TITLE, () => {
     )
     // Same discipline for the module-side scanner that backs the reachability check.
     check(
-      modulePaths.length > 20 && modulePaths.some((p) => p.includes('/api/v1/foundry/modules')),
-      `The module path scanner found ${modulePaths.length} paths and no /api/v1/foundry/modules. It is blind, ` +
+      modulePaths.length > 10 && modulePaths.some((p) => p.includes('/pending-provisions')),
+      `The module path scanner found ${modulePaths.length} paths and no /pending-provisions. It is blind, ` +
         'so every "route-not-called" verdict below would pass vacuously.',
     )
     expect(found.size).toBeGreaterThan(0)

@@ -16,7 +16,7 @@ The platform's Foundry module lives here too — **CFG Server Manager**, module 
 `crit-fumble-core` (the id predates the title and MUST stay: Foundry worlds store
 their enable flag in `core.moduleConfiguration` keyed by id, so changing it
 orphans every world's setting). It carries campaign linking, runtime player
-provisioning, the world↔platform document sync couriers, and session reporting —
+provisioning, and session reporting (it no longer syncs world documents — owner, 2026-10-03) —
 for worlds Crit-Fumble hosts. Connecting a world you host yourself is not
 currently supported. It was extracted from
 `cfg-foundry-plugin` at module 2.48.3; the **3D overlay** went to

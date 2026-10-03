@@ -1,8 +1,10 @@
 /**
- * Game-system document schema sync (dt#212)
+ * Game-system document schema descriptors (dt#212) — for the in-Foundry JSON editor.
  *
- * Introspects the system's own DataModels once per world ready and POSTs the resulting descriptors
- * to CFG, so the platform's JSON editor can warn a GM before Foundry throws their data away.
+ * Introspects the system's own DataModels from the live CONFIG, so the editor can warn a GM
+ * before Foundry throws their data away. Local only: the boot PUSH of these descriptors to CFG
+ * was cut with the rest of the sync (owner, 2026-10-03), and nothing here calls the platform.
+ * The file keeps its old path because integration specs import it by URL.
  *
  * ── Why this cannot be a static file ──────────────────────────────────────────────────────────
  * Foundry DISCARDS `system` fields that the target document type does not declare, silently — the
@@ -19,100 +21,13 @@
  * Top-level `system` keys only, plus which of them are required with no default. Deep per-field
  * type checking is Foundry's job at write time, and a mirror of it here would go stale faster than
  * it would help. See the matching note in @crit-fumble/shared's system-schema.
- *
- * GM-only and once per ready, mirroring modules-sync: every client sees the same CONFIG, so a
- * player push would only duplicate writes.
  */
 
 'use strict'
 
-import { getInstallationRef } from '../auth/host-context.js'
-import { fetchCfg } from '../auth/pair-flow.js'
-
 /**
- * Document classes worth describing.
- *
- * Item and Actor are what world compendium packs overwhelmingly hold, and they are where the
- * data-loss case bites. Others are listed because they cost nothing when absent — a system that
- * defines no dataModels for a class is skipped rather than sent as an empty descriptor.
- */
-export const DESCRIBED_DOCUMENT_CLASSES = ['Item', 'Actor', 'JournalEntryPage']
-
-/**
- * Snapshot the running system's document schemas and POST them to CFG.
- *
- * @returns {Promise<{ok: true, count: number} | {ok: false, reason: string, status?: number}>}
- */
-export async function syncSystemSchemas() {
-  if (!game?.user?.isGM) return { ok: false, reason: 'not-gm' }
-
-  const schemas = readSystemSchemas()
-  if (schemas.length === 0) return { ok: false, reason: 'no-data-models' }
-
-  // On a cfg-hosted world fetchCfg authenticates with the same-origin SESSION cookie and never the
-  // paired key (#43). A cookie identifies a user, not an installation, so the installation has to
-  // be named explicitly or the server cannot bind the push — the exact omission that made module
-  // sync 403 on every hosted world (dt#211). Harmless on self-hosted, where the key already
-  // carries the binding and the server ignores this field.
-  const installationId = getInstallationRef()
-  const res = await fetchCfg('/api/v1/foundry/system-schema', {
-    method: 'POST',
-    body: JSON.stringify(installationId ? { schemas, installationId } : { schemas }),
-  })
-
-  if (res.ok) {
-    console.log(`CFG Core | Synced ${schemas.length} system schema descriptor(s)`)
-    return { ok: true, count: schemas.length }
-  }
-
-  // Non-fatal, and deliberately not surfaced as a banner: the editor's documented behaviour with
-  // no descriptor is to stay silent, so a failed push degrades to the pre-dt#212 experience rather
-  // than to a broken one.
-  console.warn('CFG Core | System schema sync skipped:', res.reason, res.status ?? '')
-  return { ok: false, reason: res.reason, status: res.status }
-}
-
-/**
- * Project every described document class into wire-shape descriptors.
- *
- * @returns {Array<{systemId: string, systemVersion?: string, documentClass: string, types: object}>}
- */
-export function readSystemSchemas() {
-  const systemId = game?.system?.id
-  if (!systemId) return []
-  const systemVersion = game?.system?.version
-
-  const out = []
-  for (const documentClass of DESCRIBED_DOCUMENT_CLASSES) {
-    const dataModels = globalThis.CONFIG?.[documentClass]?.dataModels
-    if (!dataModels || typeof dataModels !== 'object') continue
-
-    const types = {}
-    for (const [typeName, model] of Object.entries(dataModels)) {
-      const described = describeModel(model)
-      if (described) types[typeName] = described
-    }
-
-    // A class whose models all failed to introspect is not worth sending: an empty `types` map
-    // would read downstream as "this system declares no types", and the checker's silence on an
-    // unknown type is the honest answer there.
-    if (Object.keys(types).length === 0) continue
-
-    out.push({
-      systemId: String(systemId),
-      ...(systemVersion ? { systemVersion: String(systemVersion) } : {}),
-      documentClass,
-      types,
-    })
-  }
-  return out
-}
-
-/**
- * Build ONE descriptor for a single document class from the live CONFIG — the in-Foundry JSON
- * editor's counterpart to `readSystemSchemas` (which builds all of them for the push). Same shape
- * the server stores and the shared checker consumes, so the editor's diagnostics match PlayTable's
- * exactly. Returns null when the class declares no introspectable dataModels (nothing to check).
+ * Build ONE descriptor for a single document class from the live CONFIG. Same shape the shared
+ * checker consumes, so the editor's diagnostics match PlayTable's exactly. Returns null when the class declares no introspectable dataModels (nothing to check).
  *
  * @param {string} documentClass  e.g. 'Item'
  * @returns {{ systemId: string, systemVersion?: string, documentClass: string, types: object } | null}

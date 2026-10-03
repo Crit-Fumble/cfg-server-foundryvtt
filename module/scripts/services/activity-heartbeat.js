@@ -27,7 +27,8 @@
 const LOG = 'CFG Core | Activity |'
 const HEARTBEAT_MS = 60_000 // Matches the server's 3-min staleness window.
 
-// Matches SERVICE_GM_NATIVE_ID in cfg-core-server (admin-key.ts). The headless
+// MUST equal SERVICE_GM_NATIVE_ID in cfg-core-server (src/services/foundry/admin-key.ts)
+// character for character — this is the module's only copy. The headless
 // service-GM is role-4 but must be excluded from the reported counts: its
 // presence must not keep the world alive (uptime billing), and it must not
 // register as a human GM (which would suppress its own provisioning trigger).

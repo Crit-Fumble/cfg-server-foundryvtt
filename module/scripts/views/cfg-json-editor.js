@@ -9,8 +9,8 @@
  * warning, the required-but-empty error, JSON formatting, and the pre-save health probe — the same
  * validation PlayTable runs, from the same shared code-editor core (`scripts/lib/code-editor-core.js`).
  *
- * The save goes through the SAME `applyDesiredDocument` the compendium write-back uses, so a type
- * change, a field removal and a doomed document behave identically here and there.
+ * The save goes through `applyDesiredDocument` (services/document-apply.js), which handles a type
+ * change, a field removal and a doomed document.
  */
 
 'use strict'

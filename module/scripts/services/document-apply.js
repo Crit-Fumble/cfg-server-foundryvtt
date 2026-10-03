@@ -1,11 +1,9 @@
 /**
- * Apply a desired document state to a live Foundry document — the shared core of the compendium
- * write-back (dt#185) and the in-Foundry JSON editor (dt#212 parity).
+ * Apply a desired document state to a live Foundry document — the save path of the in-Foundry
+ * JSON editor (dt#212 parity). It was shared with the compendium write-back (dt#185) until that
+ * courier was cut with the rest of the sync (2026-10-03).
  *
- * Both callers face the identical, subtle set of Foundry facts, and getting any of them wrong
- * corrupts data. Keeping the logic in one place is deliberate: a second copy that drifted on the
- * deletion markers or the type-change handling would be a silent data-loss bug, so this is one
- * authority rather than the two the rule-of-three would otherwise allow.
+ * The Foundry facts it handles are subtle, and getting any of them wrong corrupts data:
  *
  *   1. `Document#update()` CANNOT change `type` — it resolves and silently keeps the old type. A
  *      type change must be delete + create with `keepId: true`.

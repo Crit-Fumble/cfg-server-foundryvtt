@@ -111,8 +111,6 @@ Exposes plugin state to other scripts and the browser console:
 
 ```js
 window.CFGCore.version // '2.0.0'
-window.CFGCore.featureMode() // 'full' | 'narrative'
-window.CFGCore.platformSystemSlug() // '5e-compatible' | null
 window.CFGCore.campaignId() // campaign UUID | null
 window.CFGCore.voiceProvider() // 'livekit' | 'discord'
 window.CFGCore.api // CoreAPIClient instance
@@ -121,16 +119,21 @@ window.CFGCore.openCampaignManager() // open the GM panel
 
 ---
 
-## Feature Mode
+## No document sync (2026-10-03)
 
-The plugin operates in one of two modes set by Core based on the Foundry game system:
+The module no longer syncs world documents with the platform. The world snapshot pushes
+(actors, folders, items, macros, roll tables, playlists, cards, scenes, journals, world packs),
+every Core→Foundry write-back courier, the module-pack import queue, the boot pushes of the
+installed-module list, pack index and system schema, the Sourcebook shelf and the `featureMode`
+read are all gone. Owner rule: the platform must never be the reason a hosted Foundry server is
+slow, and performance outranks sync completeness. The platform does not write into a live world;
+offline platform edits are to be written into the world files server-side at launch (not built
+yet).
 
-| Mode        | Meaning                                             | When set                                         |
-| ----------- | --------------------------------------------------- | ------------------------------------------------ |
-| `narrative` | Voice, quests, party roster, chat                   | System has no platform compendium (e.g. swade)   |
-| `full`      | All of the above + character sheet sync, compendium | System supported by Core (5e-compatible, cypher) |
-
-`featureMode` is returned by the `PATCH /api/campaigns/{id}/foundry` response on every `ready`.
+What still talks to Core from a browser tab: the activity heartbeat (60s, one elected client,
+drives idle auto-stop), the provision drain (30s, one elected GM, mid-session invites), and one
+world-status ping per load. One tab per browser runs the two pollers (a Web Lock named per world
+and user; `scripts/services/tab-lock.js`).
 
 ---
 

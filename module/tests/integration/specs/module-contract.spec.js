@@ -20,14 +20,12 @@ test.describe('CFGCore module contract', () => {
       version: window.CFGCore.version,
       hasApi: Boolean(window.CFGCore.api),
       hostKind: window.CFGCore.hostKind(),
-      featureMode: window.CFGCore.featureMode(),
       linkedIsArray: Array.isArray(window.CFGCore.linkedCampaignIds()),
     }))
 
     expect(c.version).toBeTruthy()
     expect(c.hasApi).toBe(true)
     expect(['cfg-hosted', 'self-hosted']).toContain(c.hostKind)
-    expect(['full', 'narrative']).toContain(c.featureMode)
     // Worlds are linked to 0..N campaigns — the accessor is always a list.
     expect(c.linkedIsArray).toBe(true)
   })

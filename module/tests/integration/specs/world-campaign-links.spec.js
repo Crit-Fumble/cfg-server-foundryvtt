@@ -30,7 +30,6 @@ test.describe('World ↔ campaign links (N:M, optional)', () => {
     await useInstallation(page, FIXTURE.installations.standalone)
     // No campaign required: a GM can grant world access directly and play.
     await expect.poll(() => linkedIds(page)).toEqual([])
-    expect(['full', 'narrative']).toContain(await page.evaluate(() => window.CFGCore.featureMode()))
   })
 
   test('world linked to one campaign resolves exactly that campaign', async ({ page }) => {
