@@ -25,7 +25,9 @@
 
 const MODULE_ID = 'crit-fumble-core'
 const LOG = 'CFG Core | Provision |'
-const DRAIN_MS = 15_000 // Snappy enough for "refresh in a moment" without polling hot.
+// Fixed 30s. This is the mid-session-invite path, so it never backs off: a player waiting at
+// the door should not wait out a long delay. Not 15s: it was the hottest poll in an idle GM tab.
+const DRAIN_MS = 30_000
 
 export class ProvisionDrain {
   /**

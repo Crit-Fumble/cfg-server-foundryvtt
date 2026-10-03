@@ -223,8 +223,6 @@ global.window = globalThis.window
 globalThis.window.CFGCore = {
   api: null,
   campaignId: jest.fn(() => 'test-campaign-id'),
-  featureMode: jest.fn(() => 'narrative'),
-  platformSystemSlug: jest.fn(() => null),
   voiceProvider: jest.fn(() => 'livekit'),
   openCampaignManager: jest.fn(),
 }
