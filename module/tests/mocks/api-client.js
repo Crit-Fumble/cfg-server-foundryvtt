@@ -32,7 +32,6 @@ export function createMockApiClient(overrides = {}) {
 
     // Named campaign methods
     getCampaign: jest.fn().mockResolvedValue({}),
-    getFoundryConfig: jest.fn().mockResolvedValue({ defaultModules: [] }),
     updateFoundry: jest.fn().mockResolvedValue({ featureMode: 'narrative', platformSystemSlug: null }),
     getParties: jest.fn().mockResolvedValue({ parties: [] }),
     getActiveSession: jest.fn().mockResolvedValue(null),

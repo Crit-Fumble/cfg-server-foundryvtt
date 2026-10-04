@@ -152,7 +152,6 @@ api.del('/api/campaigns/abc/link')
 
 // Named campaign methods
 api.getCampaign(campaignId)
-api.getFoundryConfig(campaignId)
 api.updateFoundry(campaignId, data)
 api.getParties(campaignId)
 api.getActiveSession(campaignId)
