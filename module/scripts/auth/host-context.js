@@ -62,20 +62,84 @@ const CFG_HOSTED_PATH_PREFIX = '/servers/foundryvtt/'
 const CORE_ENDPOINT_COOKIE = 'cfg_core_endpoint'
 const SEAT_KEY_COOKIE = 'cfg_foundry_seat_key'
 
-/** Read one cookie by name from document.cookie, or null. */
+/**
+ * Read one cookie by name from document.cookie, or null.
+ *
+ * ⛔ Reads EVERY occurrence, and two that disagree mean NOTHING (cs#455 F1). All
+ * hosted worlds share one origin, and these cookies are not HttpOnly (the module
+ * has to read them), so any world's JavaScript can write a cookie of the same name
+ * with a LONGER path — `/servers/foundryvtt/<other world>/game` — which the browser
+ * then lists BEFORE the platform's own. Taking the first match handed that world the
+ * choice of where this module sends its Bearer key. A conflict is not something to
+ * resolve, only to refuse: the callers fall back to what they would do with no cookie.
+ */
 function _cookie(name) {
   if (typeof document === 'undefined' || typeof document.cookie !== 'string') return null
+  const values = new Set()
   for (const part of document.cookie.split(';')) {
     const eq = part.indexOf('=')
     if (eq < 0) continue
     if (part.slice(0, eq).trim() !== name) continue
+    let value
     try {
-      return decodeURIComponent(part.slice(eq + 1).trim()) || null
+      value = decodeURIComponent(part.slice(eq + 1).trim())
     } catch {
-      return null
+      value = null // undecodable: still an occurrence, and one that disagrees with any real value
     }
+    values.add(value)
   }
-  return null
+  if (values.size > 1) {
+    console.warn(`CFG Core | ${values.size} different "${name}" cookies on this page — ignoring all of them (cs#455)`)
+    return null
+  }
+  const [only] = values
+  return only || null
+}
+
+/** The host label that serves hosted worlds APART from core (cs#391 'retired' mode). */
+const FOUNDRY_HOST_LABEL = 'foundryvtt'
+
+/**
+ * May a COOKIE name `endpoint` as core, on a page at `pageOrigin`? (cs#455 F1)
+ *
+ * The cookie is the one endpoint channel another world can write (see `_cookie`), and
+ * the module sends its seat key as a Bearer to whatever it names. So it must name a
+ * place the platform could actually be:
+ *   - `https://core.<parent domain>` — the Foundry host's sibling. On
+ *     foundryvtt.crit-fumble.com that is https://core.crit-fumble.com, and no other.
+ *   - the page's OWN origin, on a single-origin stack: the e2e stack
+ *     (http://localhost:11000) and the dev tunnel, where Caddy serves core and Foundry
+ *     from one origin and forward-auth declares exactly that origin (`app.url`). Never
+ *     on the dedicated Foundry host, where the page origin is by construction not core
+ *     (cs#414: calls there 302 to core and lose their POST bodies).
+ * Anything else — another domain, a non-http(s) scheme, an unparseable value — is
+ * refused, and the caller falls back to the stored setting.
+ *
+ * @param {string} endpoint
+ * @param {string} pageOrigin `window.location.origin`
+ * @returns {boolean}
+ */
+export function isAcceptableCookieEndpoint(endpoint, pageOrigin) {
+  let url
+  let page
+  try {
+    url = new URL(endpoint)
+    page = new URL(pageOrigin)
+  } catch {
+    return false
+  }
+  if (url.protocol !== 'https:' && url.protocol !== 'http:') return false
+  const labels = page.hostname.split('.')
+  if (labels.length >= 3 && url.origin === `https://core.${labels.slice(1).join('.')}`) return true
+  return url.origin === page.origin && labels[0] !== FOUNDRY_HOST_LABEL
+}
+
+function _pageOrigin() {
+  try {
+    return typeof window !== 'undefined' ? window.location?.origin ?? null : null
+  } catch {
+    return null
+  }
 }
 
 /**
@@ -89,11 +153,15 @@ function _cookie(name) {
  *
  * Precedence, and the order is deliberate:
  *   1. injected `__CFG_HOSTED_CONTEXT__.endpoint` — the contracted channel.
- *   2. the `cfg_core_endpoint` cookie — server-declared, authoritative, and the
- *      only channel that reaches a NON-OWNER GM or a player (the hosted-context
- *      endpoint is owner-scoped and 404s everyone else). forward-auth mints it on
- *      BOTH edges — core and the Foundry host — on every top-level navigation, so a
- *      same-origin dev/e2e stack is declared too, never inferred from the page.
+ *   2. the `cfg_core_endpoint` cookie — server-declared, and the only channel that
+ *      reaches a NON-OWNER GM or a player (the hosted-context endpoint is
+ *      owner-scoped and 404s everyone else). forward-auth mints it on BOTH edges —
+ *      core and the Foundry host — on every top-level navigation, so a same-origin
+ *      dev/e2e stack is declared too, never inferred from the page. Since cs#455 it
+ *      is NOT trusted blindly: every world on the origin can write it, so it is
+ *      dropped when it appears twice with different values (`_cookie`) or names an
+ *      origin core could not be (`isAcceptableCookieEndpoint`), and it is never
+ *      persisted (`source: 'cookie'` — see module.js's ready hook).
  *   3. the stored `coreApiUrl` setting — the self-hosted case, and all that is left
  *      on a hosted page whose cookies have lapsed. It holds the declared value the
  *      ready-hook persisted the last time a cookie was seen, or the registered
@@ -115,18 +183,24 @@ function _cookie(name) {
  * wrong by construction on the only host that serves hosted worlds, and got
  * re-derived on every load.
  *
- * @returns {{ endpoint: string|null, declared: boolean }} `declared` is true only
- *   for 1 and 2 — the cases a GM auto-correct must not overwrite.
+ * @returns {{ endpoint: string|null, declared: boolean, source: 'injected'|'cookie'|'stored'|null }}
+ *   `declared` is true only for 1 and 2 — the cases a GM auto-correct must not
+ *   overwrite. `source` says which; only 'injected' may be persisted.
  */
 export function resolveCoreEndpoint() {
   const injected = getHostedContext()
-  if (injected && _isNonEmptyString(injected.endpoint)) return { endpoint: injected.endpoint, declared: true }
+  if (injected && _isNonEmptyString(injected.endpoint)) return { endpoint: injected.endpoint, declared: true, source: 'injected' }
 
   const fromCookie = _cookie(CORE_ENDPOINT_COOKIE)
-  if (_isNonEmptyString(fromCookie)) return { endpoint: fromCookie, declared: true }
+  if (_isNonEmptyString(fromCookie)) {
+    if (isAcceptableCookieEndpoint(fromCookie, _pageOrigin())) return { endpoint: fromCookie, declared: true, source: 'cookie' }
+    console.warn(`CFG Core | ignoring a ${CORE_ENDPOINT_COOKIE} cookie that names ${fromCookie}, which cannot be core here (cs#455)`)
+  }
 
   const stored = _storedSetting('coreApiUrl')
-  return { endpoint: _isNonEmptyString(stored) ? stored : null, declared: false }
+  return _isNonEmptyString(stored)
+    ? { endpoint: stored, declared: false, source: 'stored' }
+    : { endpoint: null, declared: false, source: null }
 }
 
 /**
