@@ -41,6 +41,7 @@ import { ProvisionDrain } from './services/provision-drain.js'
 import { tabTurn } from './services/tab-lock.js'
 import { registerJsonEditorHeaderButton } from './views/json-editor-header-button.js'
 import { mountLoadingOverlay, unmountLoadingOverlay } from './views/loading-overlay.js'
+import { registerJournalIframeGuard } from './views/journal-iframes.js'
 
 // Cover the cold-load black screen as early as possible. This esmodule
 // evaluates before `init` fires, while Foundry is still streaming world data +
@@ -148,6 +149,9 @@ function _detectInstallationIdFromUrl() {
 
 Hooks.once('init', () => {
   console.log(`CFG Core | Initializing v${MODULE_VERSION()}`)
+
+  // Cross-origin journal embeds keep working but can no longer navigate the tab (cs#455).
+  registerJournalIframeGuard()
 
   // ---- Settings ----
 
