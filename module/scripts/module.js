@@ -41,6 +41,7 @@ import { ProvisionDrain } from './services/provision-drain.js'
 import { tabTurn } from './services/tab-lock.js'
 import { registerJsonEditorHeaderButton } from './views/json-editor-header-button.js'
 import { mountLoadingOverlay, unmountLoadingOverlay } from './views/loading-overlay.js'
+import { registerJournalIframeGuard } from './views/journal-iframes.js'
 
 // Cover the cold-load black screen as early as possible. This esmodule
 // evaluates before `init` fires, while Foundry is still streaming world data +
@@ -104,9 +105,9 @@ window.CFGCore = {
 
 /**
  * Default for `coreApiUrl`: the production platform (a dev stack can override it
- * via `window.CORE_API_URL` at the register site). A cfg-hosted world gets the
- * platform-declared `cfg_core_endpoint` cookie value written over it by the
- * ready-hook auto-correct on its first GM load.
+ * via `window.CORE_API_URL` at the register site). On a cfg-hosted world the
+ * platform-declared `cfg_core_endpoint` cookie overrides it at runtime; since cs#455
+ * the cookie is never written over it (see the ready hook).
  *
  * ⛔ This used to answer `window.location.origin` on a `/servers/foundryvtt/`
  * path, which was core only while hosted worlds were served from core. Since
@@ -148,6 +149,9 @@ function _detectInstallationIdFromUrl() {
 
 Hooks.once('init', () => {
   console.log(`CFG Core | Initializing v${MODULE_VERSION()}`)
+
+  // Cross-origin journal embeds keep working but can no longer navigate the tab (cs#455).
+  registerJournalIframeGuard()
 
   // ---- Settings ----
 
@@ -339,9 +343,10 @@ Hooks.once('ready', async () => {
   // Auto-correct `coreApiUrl` + `installationId` when running cfg-hosted
   // (proxied at `/servers/foundryvtt/{installationId}/*`). Existing worlds may
   // carry a stale endpoint — the prod URL on a localdev / staging / tunnel stack,
-  // or the Foundry host itself on a world seeded by the pre-cs#414 default — and
-  // the platform-declared `cfg_core_endpoint` cookie (minted on both edges) is
-  // what corrects it. The installationId derives from the page path so the
+  // or the Foundry host itself on a world seeded by the pre-cs#414 default. The
+  // platform-declared `cfg_core_endpoint` cookie (minted on both edges) overrides it
+  // at runtime but is no longer written back (cs#455, below); only an injected
+  // context is. The installationId derives from the page path so the
   // plugin doesn't depend on `__CFG_HOSTED_CONTEXT__` injection. Idempotent:
   // only writes on actual change, GM-only.
   try {
@@ -351,10 +356,19 @@ Hooks.once('ready', async () => {
       // here PERSISTS the wrong endpoint into world data — outliving the page and
       // clobbering the correct value applyHostedContext just fetched from the server.
       // Resolve instead, and never overwrite a server-DECLARED endpoint.
+      //
+      // ⛔ Only the INJECTED context is persisted, never the cookie (cs#455 F1). The
+      // cookie jar is shared by every world on the Foundry host, so a cookie value is
+      // something another world may have written; `coreApiUrl` is WORLD data that every
+      // client of this world falls back to, across sessions. A cookie is used for this
+      // page load (`apiUrl` below) and re-minted on every navigation, so persisting it
+      // bought only the lapsed-cookie fallback, which the registered default covers in
+      // prod. A cookie-declared endpoint is still `declared`, so it is not overwritten
+      // by the undeclared branch below either.
       const resolved = resolveCoreEndpoint()
       const storedUrl = game.settings.get(MODULE_ID, 'coreApiUrl')
       if (resolved.declared) {
-        if (storedUrl !== resolved.endpoint) {
+        if (resolved.source === 'injected' && storedUrl !== resolved.endpoint) {
           await game.settings.set(MODULE_ID, 'coreApiUrl', resolved.endpoint)
           console.log(`CFG Core | coreApiUrl set from the platform-declared endpoint ${resolved.endpoint} (was ${storedUrl})`)
         }

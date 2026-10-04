@@ -5,6 +5,9 @@
  */
 
 import { jest } from '@jest/globals'
+import { readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 const MODULE_ID = 'crit-fumble-core'
 
@@ -290,46 +293,108 @@ describe('resolveCoreEndpoint', () => {
     globalThis.document.cookie = 'cfg_core_endpoint=https://wrong.example'
     settingsStore({ coreApiUrl: 'https://also-wrong.example' })
     const { resolveCoreEndpoint } = await loadHostContext()
-    expect(resolveCoreEndpoint()).toEqual({ endpoint: 'https://core.crit-fumble.com', declared: true })
+    expect(resolveCoreEndpoint()).toEqual({ endpoint: 'https://core.crit-fumble.com', declared: true, source: 'injected' })
   })
 
   it('cookie beats the stored setting, declared:true — the only channel that reaches a player or non-owner GM', async () => {
     globalThis.document.cookie = 'other=1; cfg_core_endpoint=https%3A%2F%2Fcore.crit-fumble.com; x=2'
     settingsStore({ coreApiUrl: 'https://stale-prod.example' })
     const { resolveCoreEndpoint } = await loadHostContext()
-    expect(resolveCoreEndpoint()).toEqual({ endpoint: 'https://core.crit-fumble.com', declared: true })
+    expect(resolveCoreEndpoint()).toEqual({ endpoint: 'https://core.crit-fumble.com', declared: true, source: 'cookie' })
   })
 
   it('hosted path, lapsed cookies, no injected context → the stored setting, declared:false, NEVER the page origin (cs#414)', async () => {
     settingsStore({ coreApiUrl: 'https://core.crit-fumble.com' })
     const { resolveCoreEndpoint } = await loadHostContext()
     const resolved = resolveCoreEndpoint()
-    expect(resolved).toEqual({ endpoint: 'https://core.crit-fumble.com', declared: false })
+    expect(resolved).toEqual({ endpoint: 'https://core.crit-fumble.com', declared: false, source: 'stored' })
     expect(resolved.endpoint).not.toBe(PAGE_ORIGIN)
   })
 
   it('hosted path with nothing at all → null, not the page origin', async () => {
     const { resolveCoreEndpoint } = await loadHostContext()
-    expect(resolveCoreEndpoint()).toEqual({ endpoint: null, declared: false })
+    expect(resolveCoreEndpoint()).toEqual({ endpoint: null, declared: false, source: null })
   })
 
   it('treats an empty stored setting as nothing, not as a cue to guess', async () => {
     settingsStore({ coreApiUrl: '' })
     const { resolveCoreEndpoint } = await loadHostContext()
-    expect(resolveCoreEndpoint()).toEqual({ endpoint: null, declared: false })
+    expect(resolveCoreEndpoint()).toEqual({ endpoint: null, declared: false, source: null })
   })
 
   it('uses the stored setting when self-hosted (not on the hosted path)', async () => {
     globalThis.window.location = { pathname: '/game', origin: 'https://foundry.local' }
     settingsStore({ coreApiUrl: 'https://core.crit-fumble.com' })
     const { resolveCoreEndpoint } = await loadHostContext()
-    expect(resolveCoreEndpoint()).toEqual({ endpoint: 'https://core.crit-fumble.com', declared: false })
+    expect(resolveCoreEndpoint()).toEqual({ endpoint: 'https://core.crit-fumble.com', declared: false, source: 'stored' })
   })
 
   it('reports declared:false for the stored fallback, so a GM auto-correct knows not to overwrite', async () => {
     settingsStore({ coreApiUrl: 'https://core.crit-fumble.com' })
     const { resolveCoreEndpoint } = await loadHostContext()
     expect(resolveCoreEndpoint().declared).toBe(false)
+  })
+
+  // ── cs#455 F1: the cookie is writable by EVERY world on this origin ─────────
+  // Not HttpOnly (the module must read it), and every hosted world shares the
+  // Foundry host, so another world's JavaScript can set `cfg_core_endpoint` at a
+  // LONGER path for this world — the browser then lists it FIRST — and choose where
+  // this module sends its seat key.
+  describe('a cookie another world could have written', () => {
+    beforeEach(() => {
+      settingsStore({ coreApiUrl: 'https://core.crit-fumble.com' })
+      jest.spyOn(console, 'warn').mockImplementation(() => {})
+    })
+    afterEach(() => console.warn.mockRestore())
+
+    it('two DIFFERENT values → neither is used; falls back to the stored setting, with a warning', async () => {
+      globalThis.document.cookie = 'cfg_core_endpoint=https%3A%2F%2Fevil.example; cfg_core_endpoint=https%3A%2F%2Fcore.crit-fumble.com'
+      const { resolveCoreEndpoint } = await loadHostContext()
+      expect(resolveCoreEndpoint()).toEqual({ endpoint: 'https://core.crit-fumble.com', declared: false, source: 'stored' })
+      expect(console.warn).toHaveBeenCalledWith(expect.stringMatching(/2 different "cfg_core_endpoint" cookies/))
+    })
+
+    it('two IDENTICAL values are one answer, not a conflict', async () => {
+      globalThis.document.cookie = 'cfg_core_endpoint=https%3A%2F%2Fcore.crit-fumble.com; cfg_core_endpoint=https://core.crit-fumble.com'
+      const { resolveCoreEndpoint } = await loadHostContext()
+      expect(resolveCoreEndpoint()).toEqual({ endpoint: 'https://core.crit-fumble.com', declared: true, source: 'cookie' })
+      expect(console.warn).not.toHaveBeenCalled()
+    })
+
+    it.each([
+      ['another domain', 'https://evil.example'],
+      ['a lookalike sibling', 'https://core.crit-fumble.com.evil.example'],
+      ['plain http to core', 'http://core.crit-fumble.com'],
+      ['the Foundry host itself (cs#414)', PAGE_ORIGIN],
+      ['a non-http scheme', 'javascript:alert(1)'],
+      ['not a URL', 'core'],
+    ])('a single cookie naming %s is refused → the stored setting', async (_label, value) => {
+      globalThis.document.cookie = `cfg_core_endpoint=${encodeURIComponent(value)}`
+      const { resolveCoreEndpoint } = await loadHostContext()
+      expect(resolveCoreEndpoint()).toEqual({ endpoint: 'https://core.crit-fumble.com', declared: false, source: 'stored' })
+    })
+  })
+})
+
+describe('isAcceptableCookieEndpoint', () => {
+  it.each([
+    // prod: the Foundry host's sibling `core.` — and core's own edge, which is that sibling too
+    ['https://core.crit-fumble.com', 'https://foundryvtt.crit-fumble.com', true],
+    ['https://core.crit-fumble.com/', 'https://foundryvtt.crit-fumble.com', true],
+    ['https://core.crit-fumble.com', 'https://core.crit-fumble.com', true],
+    // single-origin stacks: e2e on localhost, the dev tunnel — core IS the page origin
+    ['http://localhost:11000', 'http://localhost:11000', true],
+    ['https://cfg-localdev.crit-fumble-web.workers.dev', 'https://cfg-localdev.crit-fumble-web.workers.dev', true],
+    // refused
+    ['http://localhost:11001', 'http://localhost:11000', false],
+    ['https://foundryvtt.crit-fumble.com', 'https://foundryvtt.crit-fumble.com', false],
+    ['https://core.example.com', 'https://foundryvtt.crit-fumble.com', false],
+    ['https://core.crit-fumble.com:8443', 'https://foundryvtt.crit-fumble.com', false],
+    ['https://core.crit-fumble.com', 'null', false],
+    ['ftp://core.crit-fumble.com', 'https://foundryvtt.crit-fumble.com', false],
+  ])('%s on a page at %s → %s', async (endpoint, pageOrigin, expected) => {
+    const { isAcceptableCookieEndpoint } = await loadHostContext()
+    expect(isAcceptableCookieEndpoint(endpoint, pageOrigin)).toBe(expected)
   })
 })
 
@@ -462,5 +527,30 @@ describe('applyHostedContext — cross-origin core (cs#391)', () => {
     await applyHostedContext()
 
     expect(globalThis.fetch).toHaveBeenCalledTimes(1)
+  })
+})
+
+// ── cs#455 F1: the ready hook never PERSISTS a cookie-derived endpoint ────────
+// `coreApiUrl` is world data every client of the world falls back to, across
+// sessions; a cookie is something any world on the origin can write. Pinned against
+// the source, as purge-legacy-world-api-key.test.js does: module.js is one import
+// with ~30 side effects.
+describe('module.js ready hook — what may be written to coreApiUrl', () => {
+  const SOURCE = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../../scripts/module.js'), 'utf8')
+  const start = SOURCE.indexOf('const resolved = resolveCoreEndpoint()')
+  const block = SOURCE.slice(start, SOURCE.indexOf('const detectedInstallId', start))
+
+  it('the auto-correct block exists', () => {
+    expect(start).toBeGreaterThan(-1)
+  })
+
+  it('writes a declared endpoint only when it was INJECTED, never from the cookie', () => {
+    expect(block).toMatch(/if \(resolved\.declared\) \{\s*if \(resolved\.source === 'injected' &&/)
+  })
+
+  it('every coreApiUrl write sits behind that guard or the undeclared (stored-value) branch', () => {
+    const writes = block.match(/game\.settings\.set\(MODULE_ID, 'coreApiUrl'/g) ?? []
+    expect(writes).toHaveLength(2)
+    expect(block).toMatch(/\} else if \(resolved\.endpoint && storedUrl !== resolved\.endpoint\)/)
   })
 })

@@ -94,18 +94,22 @@ describe('renewSeatKey — asking the platform for the seat’s current key', ()
     expect(jar.writes).toEqual([])
   })
 
-  // Another script on this shared origin can write a same-named cookie at a broader
-  // path. The world's own cookie, which core just re-set, is the longer path and wins.
-  it('adopts the world’s own cookie, never one planted at a broader path', async () => {
-    const jar = cookieJar([
-      ['cfg_foundry_seat_key', DEAD],
-      ['cfg_foundry_seat_key', 'cfk_planted', '/'],
-      ['cfg_foundry_seat_key', 'cfk_planted_too', '/servers/foundryvtt/'],
-    ])
+  // Another script on this shared origin can write a same-named cookie at ANY path —
+  // including a LONGER one than the world's (`<world>/game`), which the browser then
+  // lists first. Path order cannot tell the world's own cookie apart, so a jar that
+  // disagrees with itself is no answer at all (cs#455 F1): never adopt either value.
+  it.each([
+    ['a broader path', [['cfg_foundry_seat_key', 'cfk_planted', '/'], ['cfg_foundry_seat_key', 'cfk_planted_too', '/servers/foundryvtt/']]],
+    ['a LONGER path, listed first', [['cfg_foundry_seat_key', 'cfk_planted', `${WORLD}game`]]],
+  ])('adopts no key when a cookie planted at %s disagrees with the world’s own', async (_label, planted) => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {})
+    const jar = cookieJar([['cfg_foundry_seat_key', DEAD], ...planted])
     platformAnswers({}, jar)
     const { renewSeatKey } = await loadHostContext()
 
-    expect(await renewSeatKey(DEAD)).toBe(FRESH)
+    expect(await renewSeatKey(DEAD)).toBeNull()
+    expect(warn).toHaveBeenCalledWith(expect.stringMatching(/different "cfg_foundry_seat_key" cookies/))
+    warn.mockRestore()
   })
 
   // What the jar shows is not proof core issued it, so the renewal always asks. Core
