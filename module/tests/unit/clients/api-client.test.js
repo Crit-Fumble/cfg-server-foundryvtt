@@ -351,11 +351,6 @@ describe('named campaign methods', () => {
     expect(mockFetch.mock.calls[0][1].method).toBe('GET')
   })
 
-  test('getFoundryConfig() hits /api/v1/player/campaigns/{id}/foundry/config', async () => {
-    await api.getFoundryConfig('camp-1')
-    expect(mockFetch.mock.calls[0][0]).toContain('/api/v1/player/campaigns/camp-1/foundry/config')
-  })
-
   test('getParties() hits /api/v1/player/campaigns/{id}/parties', async () => {
     await api.getParties('camp-1')
     expect(mockFetch.mock.calls[0][0]).toContain('/api/v1/player/campaigns/camp-1/parties')

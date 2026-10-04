@@ -235,11 +235,6 @@ export class CoreAPIClient {
     return this.get(`/api/v1/player/campaigns/${id}`)
   }
 
-  /** GET /api/v1/player/campaigns/{id}/foundry/config */
-  getFoundryConfig(id) {
-    return this.get(`/api/v1/player/campaigns/${id}/foundry/config`)
-  }
-
   // ── Characters ────────────────────────────────────────────────────────────
 
   /**

@@ -2,7 +2,7 @@
   "id": "crit-fumble-core",
   "title": "CFG Server Manager",
   "description": "Crit-Fumble platform integration for FoundryVTT worlds hosted by Crit-Fumble — campaign linking, runtime player provisioning, and session reporting.",
-  "version": "3.3.1",
+  "version": "3.3.2",
   "authors": [
     {
       "name": "Crit-Fumble Gaming",
