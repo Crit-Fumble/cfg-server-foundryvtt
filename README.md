@@ -2,13 +2,10 @@
 
 CFG's **server-side wrapper image** for FoundryVTT hosting — the server half of the
 `cfg-server-*` convention (alongside `cfg-server-disrecord`, `cfg-server-factorio`,
-`cfg-server-terraria`). FoundryVTT was the only hosted game-server kind without one;
-it ran the prebuilt `felddy/foundryvtt` image directly from `cfg-core-server`.
+`cfg-server-terraria`).
 
 Because **FoundryVTT _is_ a webserver** that serves its own client UI, this single
 repo owns *both halves*: the server runtime **and** what's served to the client.
-Unlike TaleSpire — whose client is a separate native app needing a separate
-symbiote — Foundry needs no separate client companion.
 
 ## The CFG Server Manager module (`module/`)
 
@@ -16,34 +13,16 @@ The platform's Foundry module lives here too — **CFG Server Manager**, module 
 `crit-fumble-core` (the id predates the title and MUST stay: Foundry worlds store
 their enable flag in `core.moduleConfiguration` keyed by id, so changing it
 orphans every world's setting). It carries campaign linking, runtime player
-provisioning, and session reporting (it no longer syncs world documents — owner, 2026-10-03) —
+provisioning, and session reporting (it does not sync world documents — owner, 2026-10-03) —
 for worlds Crit-Fumble hosts. Connecting a world you host yourself is not
-currently supported. It was extracted from
-`cfg-foundry-plugin` at module 2.48.3; the **3D overlay** went to
-`cfg-app-playtable` as the separate **`cfg-playtable`** module (2026-08-16), and
-`cfg-foundry-plugin` is now archived — nothing "stays behind" there.
-
-⚠️ `cfg-playtable` **requires** `crit-fumble-core` at runtime: the extraction
-deliberately kept writing flags in the `crit-fumble-core` namespace, which is what
-made it a pure move with no data migration. It is declared in the module's
-`relationships.requires`, not hidden.
+currently supported.
 
 **Delivery channel:** each `v*` release of this repo attaches `module.json` +
 `module.zip` as GitHub release assets, and the manifest's own URLs point at
-`releases/latest/download/…` — so a release here *is* a module publish (a
-curated default, replacing "every hosted launch installs whatever is on `main`").
-
-> ✅ **Flipped 2026-08-07 — this repo's release assets ARE the live channel.**
-> `foundryPluginManifestUrl` points at
-> `cfg-server-foundryvtt/releases/latest/download/module.json` in every config
-> location, production override included, and `cfg-foundry-plugin` is archived.
-> Verified 2026-08-16: `v0.4.1` serves `crit-fumble-core` 3.0.0.
->
-> ⚠️ This block used to forbid restructuring `cfg-foundry-plugin` because it was
-> still the live channel. That prohibition outlived the work by nine days — long
-> enough that a reader today would refuse a correct change. Left as a correction
-> rather than deleted, because a stale *prohibition* is the costly kind of drift:
-> nobody questions a warning.
+`releases/latest/download/…` — so a release here *is* a module publish.
+cfg-core-server's `foundryPluginManifestUrl` points at this manifest in every config
+(the production override included), and every hosted launch reinstalls the module
+from it, so a release reaches hosted worlds at their next launch, with no staging tier.
 
 ```bash
 cd module
@@ -52,6 +31,11 @@ npm test              # jest unit suite
 npm run build:zip     # dist/module.json + dist/module.zip (+ versioned zip)
 npm run test:foundry:up && npm run test:foundry   # integration (licensed Foundry)
 ```
+
+**Support:** report bugs and ask questions in
+[this repo's issues](https://github.com/Crit-Fumble/cfg-server-foundryvtt/issues). The
+community Discord is at <https://core.crit-fumble.com/join>, which always serves the
+current invite; never link a raw `discord.gg` invite, because invites expire.
 
 ## Design: a strict additive felddy superset
 
@@ -67,67 +51,16 @@ until a capability is turned on or the binary is run on purpose. That keeps the
 `cfg-core-server` image swap (`foundryImage`) a one-config, instantly-reversible
 change with felddy as the documented rollback (which loses only ffmpeg).
 
-**Why own it at all:**
-- **Consolidation** — one repo for Foundry server-side complexity + a clean,
-  deterministic Playwright e2e environment for testing + feature work.
-- **Co-located service-GM** — the runtime player-provisioning helper becomes a
-  headless Foundry client running *inside* this container against `localhost:30000`,
-  deleting the cross-network / proxy plumbing an external worker required.
-- **Deterministic lifecycle** — a custom entrypoint (later) can own world-load,
-  lock cleanup, and offline user bootstrap.
+`check-felddy-contract.mjs` enforces this in CI Gate — CONTRIBUTING.md says what a green
+does and does not prove; the Dockerfile header explains the ffmpeg addition.
 
-## Status — additive migration (risk-ascending, each step reversible)
-
-- [x] **Passthrough** — `FROM felddy@<digest>`, zero additions. Provably identical
-      to felddy; proved the image swap before anything was added. **Since 2026-09-06
-      the image carries ONE declared addition**: a static `ffmpeg` 9.0.1
-      (`COPY --from=mwader/static-ffmpeg@<index digest>`, ~130 MB, one layer) so GMs
-      can convert token media next to their world data — Foundry animates WEBM
-      tokens, never GIF. cfg-core-server runs it as an ephemeral job container from
-      this image (never `docker exec`), and offers the op only when the image's
-      `com.crit-fumble.tools` label names `ffmpeg`. Declared in `ADDITIONS`;
-      asserted by C3 (exact line), C2/P4 (the label), P2 (exactly one layer),
-      H_FFMPEG (it runs) and H_FFMPEG_ENCODERS (it carries libvpx-vp9).
-- [x] **CI-assert the felddy passthrough + hard contract** — `check-felddy-contract.mjs`,
-      required via CI Gate, with **no license and no secrets**. Three families, none
-      redundant: the Dockerfile SOURCE stayed additive (the "DO NOT add an ENTRYPOINT"
-      rule is now *executable* — a comment is not a guard); the IMAGE is an additive
-      superset of the pinned base (base layers an unmodified prefix, every `Config`
-      field compared by union sweep so a field nobody enumerated is still checked,
-      felddy's 13 `/home/node` scripts byte-identical); and the values cfg-core-server
-      depends on are intact (uid 1000:1000, WORKDIR, non-empty CMD carrying
-      `--dataPath=/data`, a present HEALTHCHECK, `FOUNDRY_VERSION` agreeing with this
-      Dockerfile's own header, core-server's verbatim entrypoint override, PID 1 =
-      felddy's bash supervisor, and a prompt SIGTERM rather than a force-kill).
-      ⚠️ It proves ONE platform per run (the pinned base is a 4-platform list).
-- [ ] **Boot tier — needs a booted, mostly licensed Foundry. OWNER CALL: the Foundry
-      zip on a runner is an EULA question, and activations are a limited resource.**
-      Still asserted NOWHERE in CI: `admin.txt` being hashed *and* accepted by `/auth`,
-      the `FOUNDRY_*` → `Config/options.json` mapping, `check_health.sh`'s route-prefixed
-      request, the license host-binding (`signature`), the `/data` runtime tree, and the
-      world's LevelDB actually unlocking on shutdown. These need `e2e/`, which is
-      deliberately not in CI. ⚠️ Note `e2e/` does **not** cover the route prefix either —
-      `compose.yml` sets no `FOUNDRY_ROUTE_PREFIX` and the specs hard-code `''`.
-- [ ] Swap `cfg-core-server` `foundryImage` in dev → prod. ⚠️ As of 2026-09-06 prod
-      still launches `felddy/foundryvtt` directly — this swap is what puts the
-      ffmpeg layer in front of users, and rolling it back is one config line.
-- [ ] Co-located service-GM agent, gated by `SERVICE_GM_ENABLED` (default off).
-- [x] **Module source in-repo** (`module/`) + release-asset delivery channel.
-- [x] **Flip `foundryPluginManifestUrl` to this repo's release assets** — done 2026-08-07,
-      all config locations incl. the production override.
-- ~~Bake the `crit-fumble-core` plugin into the image (collapse `syncCfgPlugin`)~~ —
-      **rejected, [#1](https://github.com/Crit-Fumble/cfg-server-foundryvtt/issues/1)
-      closed 2026-08-15.** `VOLUME /data` shadows anything baked to
-      `Data/modules/`, and a bake needs a runtime copy step that this image's
-      no-`ENTRYPOINT` rule leaves nowhere to live. Writing from the host before
-      the container starts is strictly better; see the Dockerfile header.
-
-Tracked under the [FoundryVTT Hosting epic](https://github.com/Crit-Fumble/cfg-core-server/issues/71).
+**Why own it at all:** consolidation — one repo for Foundry server-side complexity + a
+clean, deterministic Playwright e2e environment for testing + feature work.
 
 ## Build & run
 
 ```bash
-# Build (pure passthrough — no npm/secret needed yet)
+# Build (felddy + one static ffmpeg layer; no npm auth or secrets)
 docker build -t cfg-server-foundryvtt:local .
 
 # Runs exactly like felddy/foundryvtt (same env contract: FOUNDRY_*, CONTAINER_CACHE, ...)
@@ -150,10 +83,7 @@ Two guards, and it is worth knowing what each does **not** cover:
 | `npm run test:agent` (CI) | all three Playwright pins agree, and the agent pin is exact | whether the built image actually runs |
 | `e2e/tests/driver.spec.ts` | the driver SOURCE drains a real world | runs on the HOST — not the image |
 
-⚠️ **No test boots the published image.** That gap is how v0.3.0 shipped Chromium
-151 in place of 149: `agent/Dockerfile` pinned its base by digest while
-`"^1.49.0"` re-resolved a layer below, and every check stayed green. v0.3.1 fixed
-the pin; the missing rung is still missing.
+⚠️ **No test boots the published image.**
 
 The probe below is the license-free stand-in — it needs no Foundry, no `.env` and
 no `.dev-state`, and runs the image under the launcher's exact hardening:
@@ -166,9 +96,9 @@ docker run --rm --platform linux/amd64 --read-only \
   -e 'import("@playwright/test").then(async m=>{const b=await m.chromium.launch({headless:true,args:["--no-sandbox","--disable-dev-shm-usage"]});console.log(b.version());await b.close()})'
 ```
 
-⚠️ **Read what it proves narrowly.** v0.2.0, v0.3.0 *and* v0.3.1 all pass it — so
-it catches an image that cannot start a browser at all, not a browser version
-Foundry's login and drain UI has never been driven with. Verify a tag by
-extracting the published layer, never by reading the Dockerfile.
+⚠️ **Read what it proves narrowly.** It catches an image that cannot start a
+browser at all, not a browser version Foundry's login and drain UI has never been
+driven with. Verify a tag by extracting the published layer, never by reading the
+Dockerfile.
 
 License: AGPL-3.0-only.

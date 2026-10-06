@@ -7,12 +7,8 @@ Two suites live here, and they have nothing in common except the directory:
 | `unit/` | jest, pure decision logic | no — this is what CI Gate runs |
 | `integration/` | Playwright against a REAL Foundry in Docker | **yes** |
 
-> ⚠️ **This file described a suite that did not exist.** Until 2026-08-15 it
-> documented an "Image Editor" spec, `npm run test:connection`,
-> `npm run test:image-editor` and an `npm install` inside `tests/` — none of
-> which exist here. It arrived wholesale with the module absorption (`6c62a1f`)
-> from `cfg-foundry-plugin` and was never reconciled. If a command below stops
-> matching `module/package.json`, fix the doc rather than adding the script.
+If a command below stops matching `module/package.json`, fix the doc rather than
+adding the script.
 
 ## Unit suite
 
@@ -26,8 +22,7 @@ npm test              # jest — also run by the repo-root husky hooks and CI Ga
 
 Drives the specs in `integration/specs/` — the JSON editor, the document health
 probe, API-key auth, the module contract, the system-schema descriptor, quest
-sync and world/campaign links. (The pull-sync and snapshot specs went with the
-sync, 2026-10-03.)
+sync and world/campaign links.
 
 **One-time setup.** Copy `.env.test.example` to `.env.test` and fill it in.
 ⛔ Two of its keys are **host paths with no defaults** — `FOUNDRY_CACHE_DIR` and
@@ -54,6 +49,11 @@ npm run test:foundry:down    # tear down AND delete fixtures/.worlds-runtime
 Foundry mutates it freely and the tracked template stays clean. `down` deletes
 it, so a re-run starts from the template again.
 
+**Iterating on module source.** The module dir is bind-mounted live, but a
+cache-busted `import(url + '?v=…')`, the pattern `document-health-probe.spec.js`
+uses, re-fetches only that one file. Its own imports stay cached in the page's
+module map, so reload the page before trusting a re-test of an edited dependency.
+
 ## Two pins that are deliberate, not drift
 
 - **The base image** is the same digest `../../Dockerfile` pins, not the rolling
@@ -63,16 +63,13 @@ it, so a re-run starts from the template again.
   if the two ever disagree.
 - **`FOUNDRY_VERSION` is 14.361**, which is *older* than the base image's own
   default. That is on purpose: 14.361 is what `module.json` declares
-  `compatibility.verified`, what the fixture world pins as `coreVersion` and
-  `minimum`, and what a dozen "MEASURED live (v14.361)" comments in
-  `module/scripts/` record Foundry's document semantics at. Bumping it is a
-  **compatibility bump** — re-run those probes, update the comments that
-  disagree, and move `module.json` — not a version tidy-up.
+  `compatibility.verified` and what the fixture world pins as `coreVersion` and
+  `minimum`. Bumping it is a **compatibility bump** — move `module.json`, the
+  fixture world and the compose default together — not a version tidy-up.
 
 ## When something breaks
 
-`TROUBLESHOOTING.md` is next to this file. The two failures worth naming here
-because they look like bugs and are not:
+The two failures worth naming because they look like bugs and are not:
 
 - **compose exits immediately, "variable is not set"** — `.env.test` is missing
   one of the two host paths above.

@@ -10,8 +10,7 @@
  *     reading `.initial` marked ALL SIX subclass fields required-with-no-default and the editor
  *     would have thrown a hard error on every well-formed subclass. A bad descriptor was live in
  *     prod before this was caught by hand. Nothing but a real model can catch it again.
- *   - The empty-default half (`requiredNonEmpty`) has NEVER been driven against a real system —
- *     the live pass in docs/notes/schema-aware-editor-2026-07-20.md predates it (plugin 2.20.0).
+ *   - The empty-default half (`requiredNonEmpty`) has NEVER been driven against a real system.
  *
  * Foundry is real; there is no Core stack and no transport — extraction and checking are both pure
  * functions of `CONFIG`. A failure here means dnd5e's model changed, not that fixtures are unseeded.
