@@ -11,16 +11,16 @@ import { startStubCoreApi, type StubCoreApi } from '../helpers/stub-core-api'
  * live world as the service-GM and drains a queued player. Same drain the rung-3
  * spec drives inline, but exercised through the real driver entrypoint.
  *
- * ⛔ THIS DOES NOT TEST THE DEPLOYABLE IMAGE, and used to claim it did.
+ * ⛔ THIS DOES NOT TEST THE DEPLOYABLE IMAGE.
  * `execFile('node', [driver])` runs on the HOST: the host's node, the ROOT
  * package-lock's Playwright, and that Playwright's Chromium. The shipped
  * artifact is `ghcr.io/crit-fumble/cfg-foundry-service-gm` — a different node
  * base, its own `agent/package-lock.json`, its own `playwright install chromium`,
  * running non-root and read-only with `--cap-drop ALL`.
  *
- * That gap is why v0.3.0 published a Chromium nobody had run against Foundry
- * (149 → 151) while this spec stayed green. Two things now stand in for the
- * missing in-image rung, and neither is a substitute for building one:
+ * That gap lets the image ship a Chromium nobody has run against Foundry while
+ * this spec stays green. Two things stand in for the missing in-image rung, and
+ * neither is a substitute for building one:
  *   - `agent/check-playwright-pin.mjs` (CI) forces the host Playwright tested
  *     here and the one baked into the image to be the SAME version, which is
  *     what makes this run transferable evidence at all.

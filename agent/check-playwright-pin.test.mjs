@@ -39,8 +39,8 @@ test('a drifted AGENT pair is caught too — drift is not one-directional', () =
 })
 
 test('a caret range fails even when every resolved version agrees', () => {
-  // v0.3.0 verbatim: the lock said 1.61.0 and the spec said ^1.49.0, so the
-  // next install re-resolved and Chromium moved underneath a pinned-looking file.
+  // A range beside an agreeing lock: the next install re-resolves the range, and
+  // Chromium moves underneath a pinned-looking file.
   const problems = comparePins({ ...AGREED, agentSpec: '^1.61.0' })
   assert.equal(problems.length, 1)
   assert.match(problems[0], /must be an EXACT version/)
@@ -51,8 +51,7 @@ test('a tilde range is a range as well', () => {
 })
 
 test('an unreadable lock entry FAILS instead of skipping', () => {
-  // "Could not verify" must never render as "verified". Same rule the registry
-  // 401 broke when it arrived disguised as an unreachable network.
+  // "Could not verify" must never render as "verified".
   assert.match(comparePins({ ...AGREED, rootLock: null })[0], /cannot verify the pin/)
   assert.match(comparePins({ ...AGREED, agentLock: null })[0], /cannot verify the pin/)
 })

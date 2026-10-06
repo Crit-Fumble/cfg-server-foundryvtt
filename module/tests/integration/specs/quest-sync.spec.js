@@ -1,8 +1,8 @@
 /**
  * Quest sync — exercises a real per-campaign Core call (getQuests) against the
- * current v1 route. This is the regression guard for the api-client paths that
- * had drifted to the dead `/api/campaigns/...` shape; getQuests must hit
- * `/api/v1/player/campaigns/{id}/quests` and succeed for a linked campaign.
+ * v1 route. This is the regression guard for the api-client paths: getQuests
+ * must hit `/api/v1/player/campaigns/{id}/quests` (not the dead
+ * `/api/campaigns/...` shape) and succeed for a linked campaign.
  */
 
 import { test, expect } from '@playwright/test'

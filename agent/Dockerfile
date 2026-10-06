@@ -27,9 +27,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # ⚠️ The base digest above pins ONLY the base. Playwright is the other half, and
 # it decides which Chromium `playwright install` downloads — so an unpinned range
 # floats the browser this driver steers Foundry with, one layer BELOW a file that
-# reads as pinned. That is exactly what happened at v0.3.0: `^1.49.0` re-resolved
-# 1.61.0 -> 1.62.1 and swapped Chromium 149 -> 151, a jump no test had seen, onto
-# a `:latest` the launcher pulls with imagePull: always.
+# reads as pinned.
 #
 # So: an EXACT version + a committed package-lock.json + `npm ci` (which fails,
 # rather than silently resolving, if the two disagree). The pin tracks the root

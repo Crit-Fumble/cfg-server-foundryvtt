@@ -1,7 +1,7 @@
 /**
  * Linked Campaigns dialog — what a failed campaigns load tells the GM.
  *
- * The dialog is where a rights 403 used to end as a bare "HTTP 403". With a
+ * The dialog is where a rights 403 would otherwise end as a bare "HTTP 403". With a
  * rights code the server has written the explanation FOR the user (which
  * right is missing, and never "re-pair"), so the dialog relays it; every
  * other failure keeps the status-only wording. The bodies below are verbatim
@@ -37,21 +37,18 @@ describe('CfgCampaignLinksDialog — _loadData failure copy', () => {
     game.user.isGM = true
   })
 
-  // ⛔ EVERY body below is one these routes can ACTUALLY send. An earlier version
-  // of this block asserted SCOPE_REQUIRED and INSTALLATION_OWNER_REQUIRED bodies
-  // here, citing `foundry-installed-modules.ts` and `_lib/auth.ts` — routes this
-  // dialog never calls. `_loadData` calls `GET /api/v1/account/foundry/campaigns`
-  // and the two `.../campaigns/:id/worlds` routes, ALL of which live in
-  // `foundry-management.ts`, which imports only `requireAuth, requireSession`
-  // (`:22`) — no scope gate. It cannot emit a scope code, and since `ddd280a`
-  // nothing emits INSTALLATION_OWNER_REQUIRED at all. Those assertions were green
-  // against bodies the server could not produce: the exact drift this PR exists
-  // to stop, inside the PR. Keep them anchored to real emitters.
+  // ⛔ EVERY body below is one these routes can ACTUALLY send. `_loadData` calls
+  // `GET /api/v1/account/foundry/campaigns` and the two `.../campaigns/:id/worlds`
+  // routes, ALL of which live in `foundry-management.ts`, which imports only
+  // `requireAuth, requireSession` (`:22`) — no scope gate. It cannot emit a scope
+  // code, and nothing emits INSTALLATION_OWNER_REQUIRED at all. An assertion
+  // against a body the server cannot produce stays green while proving nothing.
+  // Keep them anchored to real emitters.
 
   it('relays the server sentence on a codeless 403 — the shape these routes actually send', async () => {
     // cfg-core-server src/routes/v1/account/foundry-management.ts:651 (and :770).
-    // Note: no `code` field. This is what the old `reason === 'forbidden'` gate
-    // discarded, showing the user "HTTP 403" instead.
+    // Note: no `code` field. A `reason === 'forbidden'` gate would discard it,
+    // showing the user "HTTP 403" instead.
     respond(403, '{"error":"Only the campaign creator can change Foundry linkage."}')
     const { CfgCampaignLinksDialog } = await loadDialog()
     const dialog = new CfgCampaignLinksDialog()
@@ -128,10 +125,10 @@ describe('CfgCampaignLinksDialog — _loadData failure copy', () => {
 /**
  * The SAVE path — what a failed link update tells the GM.
  *
- * `_loadData` above was taught to relay a rights 403's server-written
- * explanation; saving was not, and reported only a count. A GM whose key lacks
- * the right then saw "1 of 1 updates failed" and went looking at the
- * credential — the one thing that cannot fix a missing right. These pin the two
+ * Like `_loadData` above, saving relays a rights 403's server-written
+ * explanation rather than only a count: a GM whose key lacks the right who sees
+ * just "1 of 1 updates failed" goes looking at the credential — the one thing
+ * that cannot fix a missing right. These pin the two
  * halves of the rule: relay the explanation when the server wrote one, keep the
  * count-only wording when it did not.
  */
@@ -192,12 +189,10 @@ describe('CfgCampaignLinksDialog — _handleSave failure copy', () => {
   })
 
   it('relays even the unbound-key message — it names the fix, which a bare count does not', async () => {
-    // This ASSERTION WAS INVERTED until the codeless-403 fix. It required the
-    // count alone here, on the theory that a non-rights code means "re-pair" and
-    // the message would mislead. But the server's sentence IS "re-pair the
-    // plugin" — strictly more useful than "1 of 1 updates failed". The rights
-    // code decides whether the CREDENTIAL is dead; it was never a good proxy for
-    // whether the server wrote something worth showing.
+    // Not count-only, even though a non-rights code means "re-pair": the
+    // server's sentence IS "re-pair the plugin" — strictly more useful than
+    // "1 of 1 updates failed". The rights code decides whether the CREDENTIAL is
+    // dead; it is no proxy for whether the server wrote something worth showing.
     respond(403, '{"error":"API key is not bound to a Foundry installation — re-pair the plugin","code":"FORBIDDEN"}')
     const { CfgCampaignLinksDialog } = await loadDialog()
     const dialog = stage(CfgCampaignLinksDialog, [addedBox()])

@@ -20,8 +20,8 @@ tags = ["digitalocean", "token"]
 [[rules]]
 id = "livekit-secret"
 description = "LiveKit API Secret"
-# secretGroup = the VALUE. Without a group the secret was the whole match, so an
-# unquoted value ending in '=' padding hit the old global '=\s*$' allowlist.
+# secretGroup = the VALUE. Without a group the secret is the whole match, so an
+# unquoted value ending in '=' padding can hit an anchored allowlist like '=\s*$'.
 regex = '''LIVEKIT_API_SECRET\s*=\s*["']?([A-Za-z0-9+/]{32,}={0,2})'''
 secretGroup = 1
 tags = ["livekit", "secret"]
@@ -29,9 +29,9 @@ tags = ["livekit", "secret"]
 [[rules]]
 id = "cfg-auth-secret"
 description = "CFG auth/service secret assigned to a real value"
-# secretGroup = the VALUE. The key list was the first capture group, so gitleaks
-# took the KEY NAME as the secret: --redact masked "AUTH_SECRET" and printed the
-# value in clear, and allowlist regexes were tested against the key (2026-10-01).
+# secretGroup = the VALUE, and the key list is non-capturing. With the key list as
+# the first capture group, gitleaks takes the KEY NAME as the secret: --redact masks
+# "AUTH_SECRET" and prints the value in clear, and allowlist regexes test the key.
 regex = '''(?:AUTH_SECRET|CORE_SECRET|CRON_SECRET|TEST_AUTH_SECRET|BOT_TEST_SECRET)\s*=\s*["']?([a-zA-Z0-9+/]{32,}={0,2})'''
 secretGroup = 1
 tags = ["cfg", "secret"]
@@ -43,9 +43,9 @@ tags = ["cfg", "secret"]
 #
 # ⚠️ regexes are tested against regexTarget — the SECRET unless an entry says
 # otherwise. An anchored pattern like '=\s*$' therefore tests the captured
-# VALUE, not the line it sits on: with that target it silently passed every
-# base64 secret ending in '=' padding (2026-10-01; the test is
-# gitleaks-config.test.mjs). Before adding a regex, ask what it is tested against.
+# VALUE, not the line it sits on: with that target it silently passes every
+# base64 secret ending in '=' padding (the test is gitleaks-config.test.mjs).
+# Before adding a regex, ask what it is tested against.
 
 [[allowlists]]
 description = "Safe files and known placeholder values"
@@ -96,8 +96,6 @@ description = "Genuinely empty assignments: KEY=, KEY: \"\", export KEY=''"
 # NOT exempt. gitleaks 8.30.1 hands a line-2+ match its preceding '\n' as part of
 # the line, and a CRLF line ends in '\r'; the optional \n? and \r? cover both, so the
 # exemption works on every line, not only the first.
-# This keeps the old '=\s*$' entry's stated intent without its
-# blind spot.
 regexTarget = "line"
 regexes = [
   '''^\n?[ \t]*(?:export[ \t]+)?["']?[A-Za-z_][\w.-]*["']?[ \t]*(?::=|[:=])[ \t]*(?:""|'')?[ \t]*,?[ \t]*\r?$''',

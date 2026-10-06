@@ -1,8 +1,8 @@
 /**
- * Jest global setup — Foundry VTT mocks for Phase 1 unit tests.
+ * Jest global setup — Foundry VTT mocks for the unit tests.
  *
- * Only mocks what Phase 1 code actually uses. No image editors, scripting
- * engine, speech synthesis, canvas drawing, or other Phase 2/3+ globals.
+ * Only mocks what the module code actually uses. No image editors, scripting
+ * engine, speech synthesis, canvas drawing, or other globals it never touches.
  */
 
 import { jest } from '@jest/globals'
@@ -148,7 +148,7 @@ globalThis.Actor = {
 }
 
 /* -------------------------------------------- */
-/*  Dialog (legacy v1 — used by campaign-manager)*/
+/*  Dialog (legacy v1)                          */
 /* -------------------------------------------- */
 
 globalThis.Dialog = class Dialog {

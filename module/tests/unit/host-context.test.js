@@ -160,8 +160,8 @@ describe('applyHostedContext', () => {
   it('programmatic pairing: cfg-hosted route + no global → fetches the host key and stores it', async () => {
     globalThis.window.location = { pathname: '/servers/foundryvtt/rotfs/game', origin: 'https://core.crit-fumble.com' }
     // Same-origin install = the STORED (or declared) endpoint is this page's origin.
-    // Since cs#414 the resolver never infers that from the path, so the fixture
-    // has to say it; the `https://default` sentinel above would read as cross-origin.
+    // The resolver never infers that from the path (cs#414), so the fixture has to
+    // say it; the `https://default` sentinel above would read as cross-origin.
     store = settingsStore({ coreApiUrl: 'https://core.crit-fumble.com', apiKey: '', installationId: '' })
     globalThis.fetch = jest.fn(async () => ({
       ok: true,
@@ -263,9 +263,8 @@ describe('getHostedContext', () => {
  * Hosted Foundry is served only from its own host (`foundryVttMode` 'retired'), so
  * `window.location.origin` on a hosted path is the Foundry host. Calling the platform
  * API there 302s to core: the browser follows cross-origin, CORS blocks the response,
- * and the redirect downgrades every POST to GET — which is how ~5h of snapshot pushes
- * were discarded in prod on 2026-09-15 (cs#414), on a tab whose 12h page cookies had
- * lapsed. The resolver used to fall back to the page origin in exactly that gap.
+ * and the redirect downgrades every POST to GET, so writes are discarded. A page-origin
+ * fallback lands exactly there on a tab whose 12h page cookies have lapsed.
  *
  * These pin the precedence — injected context → cookie → stored setting → null — and,
  * in every fixture, that the page origin is not in it. The window is on the Foundry
@@ -419,13 +418,12 @@ describe('readSeatKey', () => {
 })
 
 // ── cs#391: hosted-context is a SAME-ORIGIN-only call ─────────────────────────
-// It fetched from this PAGE's origin with `credentials: 'include'`. Once hosted
-// Foundry moved to its own host that request could not succeed for three
-// independent reasons — it 302s to core and re-runs CORS on the target, the
-// endpoint is session-only since 401c7ff, and the cookie is refused from that
-// origin both by CORS and by cookie-origin-trust. It failed on EVERY world load
-// and was logged as "non-fatal", which trained the console to treat a CORS error
-// as normal. That is how a real one gets missed.
+// From a page on Foundry's own host, a fetch of it with `credentials: 'include'`
+// cannot succeed, for three independent reasons — it 302s to core and re-runs
+// CORS on the target, the endpoint is session-only, and the cookie is refused
+// from that origin both by CORS and by cookie-origin-trust. Attempting it anyway
+// fails on EVERY world load, and logging that as "non-fatal" trains the console
+// to treat a CORS error as normal. That is how a real one gets missed.
 describe('applyHostedContext — cross-origin core (cs#391)', () => {
   let store
 
@@ -495,10 +493,10 @@ describe('applyHostedContext — cross-origin core (cs#391)', () => {
   })
 
   it('with nothing declared and core stored elsewhere, does NOT fetch from this page\'s origin (cs#414)', async () => {
-    // The 2026-09-15 shape: a tab on the Foundry host whose 12h page cookies have
-    // lapsed. The resolver used to answer with `location.origin` here, and this
-    // call then 302'd to core and died in CORS on every world load. Now it reads
-    // the stored setting, sees another origin, and makes no request at all.
+    // A tab on the Foundry host whose 12h page cookies have lapsed. Answering with
+    // `location.origin` here would make this call 302 to core and die in CORS on
+    // every world load; the resolver reads the stored setting instead, sees another
+    // origin, and makes no request at all.
     globalThis.window.location = {
       pathname: '/servers/foundryvtt/rotfs/game',
       origin: 'https://foundryvtt.crit-fumble.com',

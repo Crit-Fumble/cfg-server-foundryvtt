@@ -3,9 +3,9 @@
  * (cs#414).
  *
  * The platform mints the seat key on a top-level navigation, and a Foundry session is
- * exactly one — `/game` is an SPA on a websocket. So a tab open past the key's 12h held
- * a dead key and 401'd on every courier tick while Foundry itself played on. Measured in
- * prod 2026-09-15: the platform's copy of a world froze for 1h45m and nothing said so.
+ * exactly one — `/game` is an SPA on a websocket. So without renewal a tab open past the
+ * key's 12h holds a dead key and 401s on every courier tick while Foundry itself plays
+ * on — the platform's copy of the world freezes and nothing says so.
  *
  * Two halves, both pinned here:
  *   · `renewSeatKey` (host-context.js) asks the platform for the seat's CURRENT key with
@@ -383,7 +383,7 @@ describe('CoreAPIClient — a 401 renews and retries once', () => {
 
   // The 12h rollover with two couriers in flight on the dead key. A renews and retries;
   // B's DEAD 401 lands after the swap. It is an answer about the OLD key, so it must not
-  // be read as "core refused the renewed key" — that was a false "sync paused" at every
+  // be read as "core refused the renewed key" — that raises a false "sync paused" at every
   // rollover. B retries with the key A already got, without asking again.
   it('an old-key 401 landing after the swap says nothing about the new key', async () => {
     const { settleSeatKeyRenewal } = await afterAFailedRenewal()
@@ -456,9 +456,9 @@ describe('CoreAPIClient — a 401 renews and retries once', () => {
     expect(onRenewed.mock.calls).toEqual([[true]])
   })
 
-  // The 2026-09-26 outage shape: a page restored from the browser cache booted with no
-  // seat cookie, so the client was BORN keyless and its 401s carried no Authorization at
-  // all. The renewal must not need a key to have been there first.
+  // A page restored from the browser cache boots with no seat cookie, so the client is
+  // BORN keyless and its 401s carry no Authorization at all. The renewal must not need a
+  // key to have been there first.
   it('a client born keyless renews on its first 401 and retries with the key', async () => {
     globalThis.fetch = jest.fn().mockResolvedValueOnce(unauthorized()).mockResolvedValueOnce(ok({ n: 1 }))
     const renewKey = jest.fn(async () => FRESH)

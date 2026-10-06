@@ -36,9 +36,9 @@ test.describe('CFGCore module contract', () => {
   })
 
   test('the retired single-campaign `campaignId` setting is not registered', async ({ page }) => {
-    // Guards against regressing to one-campaign-per-world: campaignId was
-    // replaced by the N:M linkedCampaignIds(). Reading an unregistered setting
-    // throws, so a clean read here would mean the legacy setting came back.
+    // Guards against regressing to one-campaign-per-world: linkage is the N:M
+    // linkedCampaignIds(), never a `campaignId` setting. Reading an unregistered
+    // setting throws, so a clean read here would mean the legacy setting came back.
     const stillRegistered = await page.evaluate(([mod]) => {
       try {
         game.settings.get(mod, 'campaignId')

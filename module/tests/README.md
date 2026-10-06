@@ -57,10 +57,9 @@ module map, so reload the page before trusting a re-test of an edited dependency
 ## Two pins that are deliberate, not drift
 
 - **The base image** is the same digest `../../Dockerfile` pins, not the rolling
-  `felddy/foundryvtt:14`. felddy rolls that tag (14.361 → 14.364 stranded
-  installs once), so a floating base could make this suite green against
-  something the platform does not ship. `check-felddy-contract.mjs` (C7) fails
-  if the two ever disagree.
+  `felddy/foundryvtt:14`. felddy rolls that tag, so a floating base could make
+  this suite green against something the platform does not ship.
+  `check-felddy-contract.mjs` (C7) fails if the two ever disagree.
 - **`FOUNDRY_VERSION` is 14.361**, which is *older* than the base image's own
   default. That is on purpose: 14.361 is what `module.json` declares
   `compatibility.verified` and what the fixture world pins as `coreVersion` and

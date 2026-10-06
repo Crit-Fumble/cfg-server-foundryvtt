@@ -3,8 +3,7 @@
  *
  * The editor is DOM + Foundry document I/O end to end, so the meaningful coverage is real: does the
  * whole loop — serialize a live document, edit its JSON, run the shared diagnostics, apply through
- * the same write-back core, refuse a doomed save — actually behave against dnd5e. All of this was
- * confirmed by hand in the local harness; this pins it so it stays confirmed.
+ * the same write-back core, refuse a doomed save — actually behave against dnd5e. This pins it.
  *
  *   1. A VALID class→subclass conversion (drop HitPoints, set classIdentifier) saves, changes type,
  *      removes the advancement, and the resulting document's sheet RENDERS.

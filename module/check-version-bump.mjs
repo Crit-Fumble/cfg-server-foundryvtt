@@ -7,8 +7,7 @@
  * `module.json`'s own `manifest`/`download` URLs point at
  * `releases/latest/download/`, so uploading a release IS publishing the module.
  * There is no separate publish step, and no staging tier between a `v*` tag and
- * a live game. What there also was, until 2026-08-10, was nothing at all
- * checking that the VERSION moved when the code did.
+ * a live game, and nothing else checks that the VERSION moved when the code did.
  *
  * The two consumers fail differently, and only one of them fails loudly:
  *
@@ -23,15 +22,14 @@
  *     anyone, so the audience is not zero.
  *
  * That is the house failure mode verbatim: not a red check, but a green one over
- * a thing that never happened. This repo has paid for version drift twice
- * already (fp#47: 2.13.0 vs 2.14.0; dt#268: 2.42.0 vs 2.48.0).
+ * a thing that never happened.
  *
  * ## Why it keys on the PACKED tree, not on "was there a release"
  *
  * Requiring a bump on every `v*` tag would be wrong and would train people to
- * bump meaninglessly. v0.3.1 is the proof: it shipped an agent Playwright pin
- * and touched zero module files. A release that does not change what Foundry
- * loads does not need a new module version.
+ * bump meaninglessly: an agent-only release (a Playwright pin, say) touches zero
+ * module files. A release that does not change what Foundry loads does not need
+ * a new module version.
  *
  * So the rule is the narrow one: if anything `build-zip.js` actually PACKS has
  * changed since the last release, the version must have moved forward. The
@@ -131,7 +129,7 @@ export function decideVersionBump({ localVersion, baseline, changedPackedFiles }
   }
 
   // Nothing Foundry loads has moved, so neither must the version. This is the
-  // v0.3.1 case: an agent-only release, zero module files touched.
+  // agent-only release case: zero module files touched.
   if (changedPackedFiles.length === 0) return problems
 
   const cmp = compareSemver(localVersion, baseline.version)

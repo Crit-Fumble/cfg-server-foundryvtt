@@ -8,9 +8,8 @@
  * literal: a WORLD setting is world state and Foundry distributes it to
  * connected clients, so a per-account credential must not live in one.
  *
- * The revert is a one-word edit that no other test in this suite can see, and
- * the comment that used to sit above it actively argued FOR world scope. So the
- * failure mode being guarded is a well-meaning refactor, not a typo.
+ * The revert is a one-word edit that no other test in this suite can see, so
+ * the failure mode being guarded is a well-meaning refactor, not a typo.
  *
  * ⚠️ What this does NOT prove: that Foundry honors the scope. That is Foundry's
  * contract, verified by reading `CONST.SETTING_SCOPES` and `ClientSettings`
@@ -46,14 +45,14 @@ describe('apiKey setting scope', () => {
   })
 
   it('stays hidden from the settings UI', () => {
-    // Not the boundary — `config: false` only hides the settings-UI field, and
-    // was true under the old scope too. Pinned because a visible field would
-    // invite pasting arbitrary strings, which is a separate reason it is off.
+    // Not the boundary — `config: false` only hides the settings-UI field.
+    // Pinned because a visible field would invite pasting arbitrary strings,
+    // which is a separate reason it is off.
     expect(registrationBlock('apiKey')).toMatch(/config:\s*false/)
   })
 
   it('leaves the non-secret settings world-scoped', () => {
-    // The scope change is scoped to the credential. `coreApiUrl` and
+    // Client scope is for the credential only. `coreApiUrl` and
     // `installationId` describe the WORLD, are not secrets, and are correct to
     // share — narrowing them would break a player's module with no gain.
     expect(registrationBlock('coreApiUrl')).toMatch(/scope:\s*'world'/)

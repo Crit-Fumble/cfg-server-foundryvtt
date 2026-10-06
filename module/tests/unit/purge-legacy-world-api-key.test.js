@@ -2,12 +2,11 @@
  * The pre-3.2.0 world-scoped `apiKey` row must be DELETED, not merely ignored
  * (cs#390).
  *
- * Registering the setting as `scope: 'client'` stopped the module reading the
+ * Registering the setting as `scope: 'client'` stops the module reading the
  * world row — Foundry's own `ClientSettings#register` skips world storage for
  * exactly that scope. It does not remove the row, and Foundry ships every WORLD
- * setting to every connecting client. Measured on a production world AFTER
- * 3.2.0 shipped: the row was still present holding a `cfk_`-shaped value. So
- * the finding stayed live behind a module that looked fixed.
+ * setting to every connecting client, so a leftover row keeps its `cfk_`-shaped
+ * value in front of every client behind a module that looks fixed.
  *
  * These drive the exported behaviour through a mocked Foundry surface, because
  * the failure modes are all about WHO may act and WHAT is targeted — a purge
@@ -140,11 +139,11 @@ describe('the shipped module.js matches what these tests exercise', () => {
   })
 
   it('is actually CALLED from the ready hook — a function nobody invokes is not a fix', () => {
-    // ⚠️ Anchored to line start, NOT a bare substring. The first version of this
-    // assertion was `/await purgeLegacyWorldApiKey\(\)/`, which a mutation check
-    // caught passing against `// await purgeLegacyWorldApiKey()` — a commented-out
-    // call satisfied the regex, so the one test guarding "it is wired" was blind
-    // to the single most likely way of unwiring it.
+    // ⚠️ Anchored to line start, NOT a bare substring: a bare
+    // `/await purgeLegacyWorldApiKey\(\)/` passes against
+    // `// await purgeLegacyWorldApiKey()` — a commented-out call satisfies it, so
+    // the one test guarding "it is wired" would be blind to the single most likely
+    // way of unwiring it.
     const called = SOURCE.split('\n').filter((l) => /^\s*await purgeLegacyWorldApiKey\(\)/.test(l))
     expect(called).toHaveLength(1)
   })

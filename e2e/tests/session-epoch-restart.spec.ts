@@ -8,21 +8,20 @@ import { launchWorld, waitForWorldActive } from '../helpers/foundry-admin'
 import { SERVICE_GM } from '../helpers/service-gm'
 
 /**
- * REAL-Foundry proof for the v1.26.0 epoch-keyed player-session cache
- * (cfg-core-server `fix(foundry): epoch-key player-session cache …`, be21679).
+ * REAL-Foundry proof for cfg-core-server's epoch-keyed player-session cache.
  *
- * This closes the exact integration gap that let the /join bug ship to prod:
- * nothing exercised the REAL `getPlayerCookie` against a REAL Foundry across a
- * process restart. Every prior layer was tested against a fake or bypassed
- * Foundry. Here we drive the actual code under test:
+ * It exercises the REAL `getPlayerCookie` against a REAL Foundry across a
+ * process restart — the integration gap a fake or bypassed Foundry cannot
+ * cover. Here we drive the actual code under test:
  *
  *   1. mint a session via the real `getPlayerCookie` (epoch = container StartedAt)
  *      and prove it loads the game (HTTP 200);
- *   2. `docker restart` the Foundry container (new process → new StartedAt) and
- *      re-activate the world (options.world is null in v14, so it must relaunch);
+ *   2. restart the Foundry container — stop + start, see restartFoundry (new
+ *      process → new StartedAt) — and re-activate the world (options.world is
+ *      null in v14, so it must relaunch);
  *   3. prove the OLD cookie is now DEAD — Foundry 302→/join — i.e. the in-memory
- *      session did NOT survive the restart (the precise failure mode behind the
- *      production bug, here proven against real Foundry rather than assumed);
+ *      session did NOT survive the restart (the failure mode the epoch key exists
+ *      for, here proven against real Foundry rather than assumed);
  *   4. prove `getPlayerCookie`, given the NEW epoch, RE-MINTS (cache invalidated
  *      by the epoch change) and the new session loads the game (200);
  *   5. prove a same-epoch call is a cache hit (no churn).
@@ -68,7 +67,7 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 /**
  * Restart the Foundry PROCESS deterministically.
  *
- * ⛔ DO NOT go back to `docker restart`. It brings the new process up ~1s after
+ * ⛔ DO NOT use `docker restart`. It brings the new process up ~1s after
  * SIGTERM, which lands INSIDE proper-lockfile's staleness window: Foundry's
  * `acquireLockFile` finds a lock whose mtime is a couple of seconds old, judges
  * it live, and dies with
@@ -80,10 +79,9 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
  * immediately" — it does NOT retry. The container then stays DOWN for the rest
  * of the run, so this spec times out and every later spec gets ECONNREFUSED.
  *
- * It is a RACE, which is why it only bit ~60% of runs: when Foundry finishes its
- * shutdown first it removes the lock itself ("Shut-down success. Goodbye!") and
- * the next boot is clean. Measured 2026-08-15: 3 of 5 full-suite runs failed
- * this way, while the spec passed every time it ran alone.
+ * It is a RACE: when Foundry finishes its shutdown first it removes the lock
+ * itself ("Shut-down success. Goodbye!") and the next boot is clean — so it fails
+ * only some full-suite runs, and the spec can pass every time it runs alone.
  *
  * `docker stop` returns only once the container has actually stopped, so nothing
  * can still hold the lock; clearing it then is safe by construction, and is what
@@ -186,7 +184,7 @@ test('v1.26.0: a Foundry restart invalidates the cached player cookie; getPlayer
   console.log(`[proof] old cookie after restart: GET /game -> ${dead.status} ${dead.location}`)
   expect(dead.status, `old session must be rejected after restart (got ${dead.status} → ${dead.location})`).not.toBe(200)
 
-  // ── Crux 2: getPlayerCookie RE-MINTS on the epoch change (the v1.26.0 fix) ──
+  // ── Crux 2: getPlayerCookie RE-MINTS on the epoch change ──
   const cookie2 = await getPlayerCookie(target(epoch2))
   const live2 = await gameStatus(cookie2)
   console.log(`[proof] re-minted cookie2 (new=${cookie2 !== cookie1}); GET /game -> ${live2.status}`)

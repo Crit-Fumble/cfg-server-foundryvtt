@@ -3,14 +3,12 @@
  *
  * The unit tests assert `describeModel`'s control flow against hand-built fake fields. They cannot
  * assert the premise the whole feature rests on: that a real dnd5e DataModel, introspected live,
- * actually yields the shape the editor's warnings are computed from. Every bug this feature has
- * shipped was in that gap:
+ * actually yields the shape the editor's warnings are computed from. The bugs live in that gap:
  *
  *   - `.initial` vs `getInitialValue()` — every dnd5e 5.3.3 field is `initial: undefined`, so
- *     reading `.initial` marked ALL SIX subclass fields required-with-no-default and the editor
- *     would have thrown a hard error on every well-formed subclass. A bad descriptor was live in
- *     prod before this was caught by hand. Nothing but a real model can catch it again.
- *   - The empty-default half (`requiredNonEmpty`) has NEVER been driven against a real system.
+ *     reading `.initial` marks ALL SIX subclass fields required-with-no-default and the editor
+ *     hard-errors on every well-formed subclass. Nothing but a real model can catch it.
+ *   - The empty-default half (`requiredNonEmpty`) is driven against a real system only here.
  *
  * Foundry is real; there is no Core stack and no transport — extraction and checking are both pure
  * functions of `CONFIG`. A failure here means dnd5e's model changed, not that fixtures are unseeded.

@@ -3,12 +3,8 @@
  * check-felddy-contract.
  *
  * ⛔ THE POINT OF THIS FILE IS THAT THE CHECK CAN GO RED. A guard that only ever
- * sees a healthy image proves nothing — this repo has shipped two checks that
- * passed against live bugs (a fixture with no Foundry data dir passed a demotion
- * test AND its ordering guard; an alert sweep called the board clean while a HIGH
- * advisory sat open, because a 403 rendered as an empty list). So every assertion
- * in the check gets a fixture here that BREAKS it, and the test fails if the check
- * stays green.
+ * sees a healthy image proves nothing. So every assertion in the check gets a
+ * fixture here that BREAKS it, and the test fails if the check stays green.
  *
  * Offline by construction: no Docker, no registry, no network. The check's IO shell
  * assembles these same shapes from `docker image inspect` and probe containers.
@@ -276,7 +272,7 @@ const hc = (w = wrapperImage(), p = goodProbes(), base = scriptMap(), df = GOOD_
 
 test('H_USER catches a renumbered uid — including "fixing" it to the docs\' wrong 1000:1001', () => {
   const p = goodProbes()
-  p.gid = '1001' // what README.md and the Dockerfile header both claim
+  p.gid = '1001' // CFG_DATA_GID — the supplementary group, not the image's gid
   fires(hc(wrapperImage(), p), 'H_USER')
 
   const p2 = goodProbes()
@@ -379,7 +375,8 @@ test('C2 catches the tools label going missing or naming a different tool set', 
 })
 
 test('H_VERSION catches a digest bump that silently moved the Foundry version', () => {
-  // upstream-watch rewrites the FROM digest and NOTHING else, so the header goes stale.
+  // A digest move the header does not follow (a hand bump, or a failed tag lookup in
+  // upstream-watch) leaves the header stale.
   const bumped = wrapperImage()
   bumped.Config.Env = bumped.Config.Env.map((e) => (e.startsWith('FOUNDRY_VERSION=') ? 'FOUNDRY_VERSION=14.999' : e))
   fires(hc(bumped), 'H_VERSION')

@@ -26,7 +26,7 @@ from it, so a release reaches hosted worlds at their next launch, with no stagin
 
 ```bash
 cd module
-npm ci               # tokenless — zero @crit-fumble deps since 2026-08-19
+npm ci               # tokenless — zero @crit-fumble deps
 npm test              # jest unit suite
 npm run build:zip     # dist/module.json + dist/module.zip (+ versioned zip)
 npm run test:foundry:up && npm run test:foundry   # integration (licensed Foundry)
