@@ -189,6 +189,19 @@ const SERVER_403_CODES = {
       'which source scanning cannot verify. Human reasoning, reported every run, never checked.',
   },
 
+  TENANT_SOURCE: {
+    handling: 'unreachable',
+    emitted: true,
+    unreachableBecause: 'auth-branch',
+    why:
+      'src/plugins/tenant-source-guard.ts (F6, cs#472) refuses a request whose SOCKET peer is a tenant ' +
+      "container's own address on its per-install /29; in shared mode it never fires. This module runs only " +
+      "in a browser (a GM's tab or the headless service GM) and calls core at coreApiUrl, the browser-facing " +
+      'origin foundry-cfg-plugin.ts stamps, so every request reaches core-server through Caddy from a ' +
+      'platform address. ⚠️ A network-source branch, not a credential one: source scanning cannot verify ' +
+      'it. Human reasoning, reported every run, never checked.',
+  },
+
   OWNER_ONLY: {
     handling: 'unreachable',
     emitted: true,
