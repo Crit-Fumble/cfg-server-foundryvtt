@@ -46,7 +46,7 @@ test('a BACKWARDS version fails too, and says so distinctly', () => {
 })
 
 test('an UNCHANGED packed tree needs no bump — v0.3.1 verbatim', () => {
-  // v0.3.1 shipped an agent Playwright pin and touched zero module files.
+  // An agent-only release (a Playwright pin) touches zero module files.
   // Demanding a module bump there would be wrong, and would make every release
   // churn the version for nothing.
   assert.deepEqual(decideVersionBump({ ...CHANGED, localVersion: '3.0.0', changedPackedFiles: [] }), [])
@@ -58,8 +58,7 @@ test('no baseline at all is a genuine pass, not a hidden skip', () => {
 })
 
 test('a baseline whose manifest could not be READ fails instead of passing', () => {
-  // "Could not verify" must never render as "verified" — the same collapse that
-  // let a 403 render as a clean board and an `abandoned` job render as success.
+  // "Could not verify" must never render as "verified".
   const problems = decideVersionBump({
     ...CHANGED,
     baseline: { tag: 'v0.3.1', version: null },

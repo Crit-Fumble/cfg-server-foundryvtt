@@ -4,18 +4,18 @@
  *
  * ## Why this exists
  *
- * The Dockerfile is `FROM` + four `LABEL`s + one declared `COPY` (a static ffmpeg,
+ * The Dockerfile is `FROM` + five `LABEL`s + one declared `COPY` (a static ffmpeg,
  * see STATIC_FFMPEG in the rules file), and its load-bearing rule —
  *
  *   > DO NOT add an ENTRYPOINT here. [...] felddy's entrypoint + bash supervisor
  *   > stays PID 1 — load-bearing: a clean SIGTERM is the only thing that unlocks
  *   > the world's LevelDB on shutdown.
  *
- * — was enforced by that comment and nothing else. The README calls this image a
- * "strict ADDITIVE SUPERSET [...] provably byte-identical to felddy until a
- * capability is turned on", and CONTRIBUTING says "a wrapper that diverges from
- * felddy's env/volume contract is a bug". Nothing proved any of it. Same shape as
- * the two guards this repo already ships (agent/check-playwright-pin.mjs,
+ * — lives in that comment. The Dockerfile calls this image a "Strict ADDITIVE
+ * SUPERSET of felddy/foundryvtt", the README says it "behaves byte-for-byte like
+ * felddy until a capability is turned on", and CONTRIBUTING says "a wrapper that
+ * diverges from felddy's env/volume contract is a bug". This check proves it. Same
+ * shape as the two guards this repo already ships (agent/check-playwright-pin.mjs,
  * module/check-version-bump.test.mjs): a comment is not a guard.
  *
  * ## THREE FAMILIES, and none is redundant
@@ -27,8 +27,7 @@
  *      to upstream regressions: both sides move together on a digest bump.
  *   H. HARD CONTRACT — wrapper vs absolute values + live probes. Guards UPSTREAM.
  *      This is the family that goes red on the daily upstream-watch bump PR, which
- *      rewrites the FROM digest by sed and until now had nothing inspecting what
- *      came back.
+ *      rewrites the FROM digest by sed.
  *
  * P alone would bless a base that dropped the HEALTHCHECK (both sides identical).
  * H alone would bless a wrapper that ships correct values while ALSO adding a dead
@@ -49,13 +48,12 @@
  *    literal assertion and every probe. Only H_SCRIPTS (a sha256 map of felddy's
  *    13 /home/node files, wrapper vs base, exact key set) sees it.
  *
- * ## The uid the docs get wrong
+ * ## The uid trap
  *
- * The image runs uid **1000:1000**, not the "1000:1001" README.md and the
- * Dockerfile header both claim. 1001 is CFG_DATA_GID — a SUPPLEMENTARY group
- * cfg-core-server adds at launch (`groupAdd`), never the image's own gid. A check
- * written from the prose fails against a correct image and invites "fixing" the
- * image to match a wrong doc.
+ * The image runs uid **1000:1000**, not 1000:1001. 1001 is CFG_DATA_GID — a
+ * SUPPLEMENTARY group cfg-core-server adds at launch (`groupAdd`), never the
+ * image's own gid. A check written to 1001 fails against a correct image and
+ * invites "fixing" the image to match.
  *
  * ## What a green here does NOT mean
  *
@@ -74,10 +72,7 @@
  *   this file                   THE IO SHELL. Every docker call lives here, in main().
  *
  * That seam is what lets felddy-contract-rules.test.mjs mutate facts offline and
- * prove each rule can go RED without a Docker daemon. It was split out on
- * 2026-08-15 at 793 of the 800-line hard max — the cut this header already
- * described, so it moved code and changed no behaviour (33 offline cases and all
- * 8 live mutants re-run green either side of it).
+ * prove each rule can go RED without a Docker daemon.
  *
  * ⚠️ If you add a rule, it goes in the rules module. A decision made in here
  * cannot be mutation-tested, which is the one property this design exists for.
@@ -143,10 +138,10 @@ function main() {
   const dockerfileText = readFileSync(join(REPO_ROOT, 'Dockerfile'), 'utf8')
 
   // ── FAMILY C first: no Docker, no pull. A forbidden instruction fails in <1s.
-  // ⛔ A MISSING HARNESS IS A FAILURE, NOT A SKIP. Reading this with an
-  // `existsSync ? … : ''` fallback meant deleting or moving the file silently
-  // switched C7 off and the check still printed green — the same
-  // empty-output-parses-as-clean shape H_PROBE exists to prevent. If the harness
+  // ⛔ A MISSING HARNESS IS A FAILURE, NOT A SKIP. With an `existsSync ? … : ''`
+  // fallback, deleting or moving the file would silently switch C7 off while the
+  // check still printed green — the same empty-output-parses-as-clean shape
+  // H_PROBE exists to prevent. If the harness
   // genuinely moves, this check gets updated; it does not get to quietly lapse.
   const composePath = join(REPO_ROOT, 'module', 'tests', 'docker-compose.yml')
   const cProblems = [...checkDockerfile(dockerfileText)]
@@ -160,11 +155,11 @@ function main() {
   }
 
   // ⛔ STOP HERE IF THE SOURCE IS ALREADY INVALID. Family C needs no Docker, so a
-  // forbidden instruction fails in <1s with no pull and no build. This is also a
-  // correctness fix, not just a speed one: a Dockerfile with a bad ENTRYPOINT
-  // produces an image whose probe containers cannot start, and the crash that
-  // caused USED TO REPLACE the diagnosis with an execFileSync stack trace. The
-  // mutation suite caught exactly that — the check failed for the wrong reason.
+  // forbidden instruction fails in <1s with no pull and no build. This is also
+  // about correctness, not just speed: a Dockerfile with a bad ENTRYPOINT
+  // produces an image whose probe containers cannot start, and that crash would
+  // replace the diagnosis with an execFileSync stack trace — the check failing
+  // for the wrong reason.
   if (cProblems.length > 0) {
     console.log('✗ C  Dockerfile source')
     for (const problem of cProblems) console.log(`    ${problem}`)
@@ -214,11 +209,11 @@ function main() {
   }
 
   const probes = {}
-  // ⛔ KEY=VALUE, never positional lines. The first cut of this probe read results
-  // by line INDEX, and `ls -A /data` on an empty dir emits NOTHING — not even a
-  // newline — so every field below it shifted up by one and `/data is not empty:
-  // "yes"` was reported against a perfectly good image. Positional parsing of
-  // possibly-empty command output is a bug generator; the markers make a missing
+  // ⛔ KEY=VALUE, never positional lines. Read by line INDEX, `ls -A /data` on an
+  // empty dir emits NOTHING — not even a newline — so every field below it shifts
+  // up by one and `/data is not empty: "yes"` is reported against a perfectly good
+  // image. Positional parsing of possibly-empty command output is a bug
+  // generator; the markers make a missing
   // value read as missing (which H_PROBE fails on) instead of as its neighbour.
   const PROBE_SCRIPT = [
     'echo "uid=$(id -u)"',

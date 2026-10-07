@@ -1,11 +1,11 @@
 // .gitleaks.toml, run through the real gitleaks binary.
 //
-// WHY (2026-10-01): the global allowlist carried '=\s*$' with the default
-// regexTarget, which is the SECRET, not the line. So every base64 secret ending
-// in '=' padding was silently allowlisted, and cfg-auth-secret took the KEY NAME
-// as its secret, so --redact printed the value. These tests pin the semantics a
-// regex reading of the TOML cannot show: what each allowlist entry is tested
-// against. Same fix and test as cfg-core-dev-tools (dev/scripts/gitleaks-config.test.mjs).
+// WHY: an allowlist regex is tested against its regexTarget — by default the
+// SECRET, not the line — so an anchored '=\s*$' silently allowlists every base64
+// secret ending in '=' padding, and a rule whose first capture group is the KEY
+// NAME makes --redact print the value. These tests pin the semantics a regex
+// reading of the TOML cannot show: what each allowlist entry is tested against.
+// Same test as cfg-core-dev-tools (dev/scripts/gitleaks-config.test.mjs).
 //
 // Skips (loudly) where gitleaks is absent, e.g. the ubuntu-latest CI runners.
 // The pre-commit hook uses it when installed.
@@ -66,8 +66,8 @@ test("a base64 secret ending in '=' is flagged by each CFG rule, and redacted", 
   assert.ok(has(findings, 'cfg-auth-secret', 'app.env', 1), JSON.stringify(findings))
   assert.ok(has(findings, 'livekit-secret', 'app.env', 2), JSON.stringify(findings))
   assert.ok(has(findings, 'cfg-auth-secret', 'app.env', 3), JSON.stringify(findings))
-  // --redact masks the rule's SECRET. If that were the key name (cfg-auth-secret
-  // before 2026-10-01), CI logs would print the value in clear.
+  // --redact masks the rule's SECRET. If that were the key name, CI logs would
+  // print the value in clear.
   for (const v of [auth, livekit, quoted]) assert.ok(!raw.includes(v.slice(0, 40)), 'a value survived --redact')
 })
 

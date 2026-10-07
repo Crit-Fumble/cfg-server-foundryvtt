@@ -5,15 +5,12 @@
  * ────────────────────
  * `FORBIDDEN_CODES` (scripts/auth/connection-state.js) lists the server error
  * codes meaning "the credential is ALIVE but lacks a right", so a 403 carrying one
- * must NOT be read as a dead key. Its docblock claimed the list "MIRRORS the core
- * server, which is the source of truth for it", and that the unit tests "carry
- * those bodies verbatim, so a change on either side has a named counterpart".
+ * must NOT be read as a dead key. The list mirrors the core server, which is the
+ * source of truth for it.
  *
- * The promise failed in the only direction that mattered. Core `ddd280a`
- * (v1.213.0) made a seat key authorized by its BINDING rather than by ownership,
- * deleting both sites that emitted `INSTALLATION_OWNER_REQUIRED` — and every
- * module test stayed green, because they feed `forbiddenCode()` hand-written
- * bodies. A mock cannot notice the server stopped producing what it mocks.
+ * The module's unit tests feed `forbiddenCode()` hand-written bodies, so when the
+ * server stops emitting a code — or starts emitting a new one — every one of them
+ * stays green. A mock cannot notice the server stopped producing what it mocks.
  *
  * This test reads the server's SOURCE and derives the set of 403 codes it can
  * actually emit. The derived set is the INPUT, so the input changes when the
@@ -37,12 +34,6 @@
  * still has teeth: a retired row must ALSO stay in FORBIDDEN_CODES (a code nobody
  * handles is a stale line, not legacy retention), and a retired code that comes
  * BACK fails too, forcing a re-read rather than a silent widening.
- *
- * PROVEN against the real drift, not asserted: scanning `ddd280a^` finds
- * INSTALLATION_OWNER_REQUIRED at foundry-installed-modules.ts and
- * foundry-system-schema.ts; `ddd280a` and later, NOWHERE. With the table as it
- * stood when PR #29 was raised (`emitted: true`) the "still emitted" assertion
- * goes red on exactly that commit.
  *
  * ⛔ WHAT THIS TEST DOES NOT CATCH — do not let a green run imply any of it
  * ────────────────────────────────────────────────────────────────────────
@@ -189,6 +180,19 @@ const SERVER_403_CODES = {
       'which source scanning cannot verify. Human reasoning, reported every run, never checked.',
   },
 
+  TENANT_SOURCE: {
+    handling: 'unreachable',
+    emitted: true,
+    unreachableBecause: 'auth-branch',
+    why:
+      'src/plugins/tenant-source-guard.ts (F6, cs#472) refuses a request whose SOCKET peer is a tenant ' +
+      "container's own address on its per-install /29; in shared mode it never fires. This module runs only " +
+      "in a browser (a GM's tab or the headless service GM) and calls core at coreApiUrl, the browser-facing " +
+      'origin foundry-cfg-plugin.ts stamps, so every request reaches core-server through Caddy from a ' +
+      'platform address. ⚠️ A network-source branch, not a credential one: source scanning cannot verify ' +
+      'it. Human reasoning, reported every run, never checked.',
+  },
+
   OWNER_ONLY: {
     handling: 'unreachable',
     emitted: true,
@@ -246,18 +250,18 @@ const TABLE_CODES = Object.keys(SERVER_403_CODES)
 /* ══ 2. LOCATING cfg-core-server — SEARCH, never assume a depth ═══════════════
  *
  * ⛔ `../../cfg-core-server` is true from a worktree and false from the main
- * checkout (or the reverse). That is exactly the bug PR #30 fixed in the husky
- * trademark hook: a fixed relative path that resolved from one layout, missed
- * from the other, and SKIPPED SILENTLY. So: walk UP from this file to the root,
+ * checkout (or the reverse): a fixed relative path resolves from one layout,
+ * misses from the other, and SKIPS SILENTLY — the same trap the husky trademark
+ * hook's upward search exists for. So: walk UP from this file to the root,
  * trying `<ancestor>/cfg-core-server` and `<ancestor>/workspaces/cfg-core-server`
  * at each level. A candidate counts only if the MARKER file is present —
  * existence-of-directory is never mistaken for existence-of-checkout, the half of
- * #30's bug that made it silent. Three outcomes, kept distinct on purpose:
+ * that trap that makes it silent. Three outcomes, kept distinct on purpose:
  *   found      → run the scan
  *   absent     → SKIP (a fork has no private sibling; see the banner in §6)
  *   near-miss  → FAIL. A directory named cfg-core-server with no marker is a
  *                broken or empty checkout, and calling that "standalone" is the
- *                #30 failure wearing a new hat.
+ *                same silent skip wearing a new hat.
  */
 const MARKER = join('src', 'routes', 'v1', '_lib', 'auth.ts')
 
@@ -613,8 +617,8 @@ describeScan(TITLE, () => {
         'server changed its reply shape, or the comment stripper desynced. Fix the scanner before believing ' +
         'anything else in this file.',
     )
-    // A code we KNOW is there, measured over HTTP the day this test was written.
-    // Believing a zero without a known-present control is how an empty result gets trusted.
+    // A code we KNOW is there. Believing a zero without a known-present control is how
+    // an empty result gets trusted.
     check(
       (found.get('SCOPE_REQUIRED') ?? []).length > 0,
       'SCOPE_REQUIRED has no emission site. It is the positive control: if it is gone, distrust every other ' +
@@ -652,7 +656,7 @@ describeScan(TITLE, () => {
     expect(unclassified).toEqual([])
   })
 
-  // module → server: the ddd280a catch. Narrow, explicit legacy allowance.
+  // module → server: a code the server stopped emitting. Narrow, explicit legacy allowance.
   it('every code the table marks as emitted is still emitted by the server', () => {
     const vanished = Object.entries(SERVER_403_CODES)
       .filter(([code, row]) => row.emitted && !found.has(code))
@@ -776,7 +780,7 @@ describe('server 403 inventory — coverage report', () => {
 
     if (BROKEN_CHECKOUT) {
       // A directory by the right name with no marker file is NOT "standalone".
-      // Silently skipping on it is the PR #30 failure mode wearing a new hat.
+      // Silently skipping on it is the fixed-path trap (§2) wearing a new hat.
       throw new Error(
         [
           'A candidate path was rejected — it is not a cfg-core-server checkout:',

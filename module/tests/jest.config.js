@@ -3,7 +3,7 @@
  * Uses ES modules with experimental VM modules support
  *
  * NOTE: E2E tests use Playwright and should be run with:
- *   npm run test:e2e
+ *   npx playwright test --config tests/playwright.config.js
  *
  * Jest unit tests should be run with:
  *   npm test
@@ -17,8 +17,8 @@ export default {
   // the service tests) keeps the event loop alive, and it prints "Jest did not
   // exit one second after the test run has completed."
   //
-  // That is not cosmetic here: .husky/pre-push runs `npm test`, so every push
-  // blocked on the hung runner until it was killed by hand. forceExit is the
+  // That is not cosmetic here: .husky/pre-push runs `npm test`, so without this
+  // every push blocks on the hung runner until it is killed by hand. forceExit is the
   // same safety net cfg-core-server uses. Chasing the leak itself needs
   // `--detectOpenHandles`, which is a separate job.
   forceExit: true,

@@ -65,9 +65,9 @@ describe('describeModel', () => {
   })
 
   it('reads the default from getInitialValue(), not the `initial` property', async () => {
-    // The live-prod regression. Every dnd5e 5.3.3 subclass field looks like this: required, not
-    // nullable, `initial` undefined — yet each returns a real default from getInitialValue().
-    // Testing `initial` marked all six required and errored on every well-formed subclass.
+    // Every dnd5e 5.3.3 subclass field looks like this: required, not nullable, `initial`
+    // undefined — yet each returns a real default from getInitialValue(). Testing `initial`
+    // marks all six required and errors on every well-formed subclass.
     const { describeModel } = await loadSync()
     const dnd5eShaped = (initial) => ({ required: true, nullable: false, initial: undefined, getInitialValue: () => initial })
     const out = describeModel(

@@ -4,16 +4,16 @@
  * 1. Waits for FoundryVTT to be ready (polls /api/status)
  * 2. Logs into Foundry as GM via headless Playwright browser
  * 3. Injects CFG module settings into the running world:
- *      coreApiUrl  — CORE_API_URL env var
- *      campaignId  — CORE_TEST_CAMPAIGN_ID env var
- *      apiKey      — CORE_TEST_API_KEY env var (self-hosted tests)
+ *      coreApiUrl      — CORE_API_URL env var
+ *      apiKey          — CORE_TEST_API_KEY env var (self-hosted tests)
+ *      installationId  — the standalone installation from CORE_TEST_FOUNDRY_FIXTURE
  * 4. Saves GM storage state so test projects skip re-login
  *
  * Env vars (from tests/.env.test):
- *   FOUNDRY_URL            — default http://localhost:30000
- *   CORE_API_URL           — Core server to test against
- *   CORE_TEST_CAMPAIGN_ID  — campaign ID to link the world to
- *   CORE_TEST_API_KEY      — cfk_ key for self-hosted tests
+ *   FOUNDRY_URL                — default http://localhost:30000
+ *   CORE_API_URL               — Core server to test against
+ *   CORE_TEST_API_KEY          — cfk_ key for self-hosted tests
+ *   CORE_TEST_FOUNDRY_FIXTURE  — provisioned fixtures (npm run test:foundry:provision)
  */
 
 import { chromium } from '@playwright/test'
@@ -86,8 +86,7 @@ async function injectModuleSettings(page) {
   // World-centric baseline: the API base URL, the self-hosted key, and a
   // standalone (unlinked) installationId. Specs switch installationId per
   // scenario to drive which campaigns the world resolves as linked. There is no
-  // `campaignId` — that single-campaign setting was retired in favour of the
-  // N:M linkedCampaignIds() join.
+  // `campaignId` setting — linkage is the N:M linkedCampaignIds() join.
   const installationId = FIXTURE?.installations?.standalone ?? ''
   await page.evaluate(
     ({ moduleId, apiUrl, apiKey, installationId }) => {

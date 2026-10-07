@@ -1,6 +1,6 @@
 /**
- * fetchCfg — the authenticated fetch helper in pair-flow.js (the file keeps its
- * old name; the device-pair state machine that used to live there is gone).
+ * fetchCfg — the authenticated fetch helper in pair-flow.js (despite the file
+ * name, it holds no device-pair state machine).
  * Covers Bearer-vs-cookie selection and the apiKey fallback.
  */
 
@@ -71,16 +71,14 @@ describe('fetchCfg', () => {
     expect(url).toBe('https://core.crit-fumble.com/x')
   })
 
-  // #43 — a cfg-hosted Foundry is served same-origin with core, so the session
-  // cookie is the auth. A stale stored API key (from a prior self-hosted pair)
-  // must NOT ride along as a Bearer — that's what 401'd the plugin↔core calls.
+  // #43 — SAME-origin with core, the session cookie is the auth. A stale stored
+  // API key (from a prior self-hosted pair) must NOT ride along as a Bearer —
+  // that 401s the plugin↔core calls.
   // ── cs#391: the branch is the ORIGIN, not the host kind ────────────────────
-  // These four replace two tests that asserted "cfg-hosted → cookie". That was
-  // right only while hosted Foundry was served FROM core; once it moved to its
-  // own host the cookie became unusable (core withholds
-  // Access-Control-Allow-Credentials for that origin, deliberately), and asking
-  // for it failed the preflight — so every hosted call reported a generic
-  // "offline" while the container sat healthy.
+  // Hosted Foundry is served from its own host, where the cookie is unusable
+  // (core withholds Access-Control-Allow-Credentials for that origin,
+  // deliberately), and asking for it fails the preflight — so every hosted call
+  // would report a generic "offline" while the container sits healthy.
 
   it('SAME-origin as core: the session cookie is the auth, no Bearer', async () => {
     settingsStore({ coreApiUrl: 'https://core.crit-fumble.com', apiKey: 'cfk_secret' })

@@ -1,10 +1,9 @@
 /**
  * felddy-contract-rules — the PURE decisions behind check-felddy-contract.
  *
- * Split out of check-felddy-contract.mjs on 2026-08-15 at 793 of the 800-line
- * hard max. The cut is the one that file's own header already described, not a
- * new idea: every function here takes plain facts and returns problem strings,
- * and every docker call lives in the IO shell next door. That split is what lets
+ * Every function here takes plain facts and returns problem strings, and every
+ * docker call lives in the IO shell next door (check-felddy-contract.mjs). That
+ * split is what lets
  * felddy-contract-rules.test.mjs mutate facts offline — no Docker, no registry,
  * no network — and prove each rule can actually go RED.
  *
@@ -30,7 +29,7 @@
  */
 export const STATIC_FFMPEG = {
   source: 'mwader/static-ffmpeg',
-  // 9.0.1 manifest-list digest (amd64 + arm64). Verified 2026-09-06: libvpx-vp9
+  // 9.0.1 manifest-list digest (amd64 + arm64). On this build: libvpx-vp9 is
   // present, the gif→webm argv template yields valid EBML, a playlist named .gif
   // is refused under `-f gif`. Bumping = new digest here (the Dockerfile COPY is
   // checked against it) + re-running those three checks.
@@ -132,7 +131,7 @@ export const HARD_CONTRACT = {
 
 /**
  * cfg-core-server's container entrypoint override, VERBATIM from
- * foundry-management.ts:568. Copied rather than imported — this repo has no
+ * foundry-management.ts. Copied rather than imported — this repo has no
  * dependency on core-server, and a copy that drifts is caught by H_OVERRIDE
  * failing, which is louder than a stale import would be.
  */
@@ -263,12 +262,10 @@ export function checkDockerfile(text, additions = ADDITIONS) {
  * FAMILY C, second file — the module's integration harness must run the SAME base
  * the wrapper ships.
  *
- * `module/tests/docker-compose.yml` used the rolling `felddy/foundryvtt:14` while
- * the Dockerfile pinned a digest. Both resolved identically the day this was
- * written, which is exactly why it was safe to pin and exactly why the drift would
- * have been invisible: felddy rolls `:14` (14.361 -> 14.364 stranded installs
- * once), so the licensed integration suite could go green against a base the
- * platform does not ship, and nothing would say so.
+ * A rolling `felddy/foundryvtt:14` in `module/tests/docker-compose.yml` would drift
+ * from the Dockerfile's digest invisibly: felddy rolls `:14`, so the licensed
+ * integration suite could go green against a base the platform does not ship,
+ * and nothing would say so.
  *
  * Compares digests only. The harness's FOUNDRY_VERSION is deliberately NOT checked
  * — the Foundry APP version is per-install platform state resolved at launch, and
@@ -437,7 +434,7 @@ export function checkHardContract(wrapper, probes, baseScripts, hard = HARD_CONT
   }
 
   // H_USER — uid 1000:1000. Note: NOT 1000:1001; 1001 is CFG_DATA_GID, a
-  // supplementary group core-server adds at launch, and the docs say otherwise.
+  // supplementary group core-server adds at launch.
   if (cfg.User !== hard.user) {
     problems.push(`H_USER Config.User is ${JSON.stringify(cfg.User)}, expected ${JSON.stringify(hard.user)}`)
   }
@@ -526,9 +523,10 @@ export function checkHardContract(wrapper, probes, baseScripts, hard = HARD_CONT
   }
 
   // H_VERSION — the Dockerfile's own stated felddy version vs the image's ENV.
-  // Self-checking by design: upstream-watch rewrites the FROM digest and NOTHING
-  // else, so a bump that moves the Foundry version goes red until a human reconciles
-  // the header. No literal to rot in this file.
+  // Self-checking by design: upstream-watch rewrites the header's version along
+  // with the FROM digest when it can map the digest to a 14.x tag, so a digest move
+  // the header does not follow (a hand bump, or a failed tag lookup) goes red until
+  // a human reconciles the header. No literal to rot in this file.
   const stated = (dockerfileText.match(/THE PIN BELOW IS felddy\s+([0-9]+\.[0-9]+(?:\.[0-9]+)?)/i) || [])[1]
   const envVersion = (parseEnv(cfg.Env).find(([k]) => k === 'FOUNDRY_VERSION') || [])[1]
   if (!stated) {

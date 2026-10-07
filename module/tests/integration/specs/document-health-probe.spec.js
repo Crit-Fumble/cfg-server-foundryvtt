@@ -9,7 +9,7 @@
  *      that trusted construction to fail would pass every doomed document. (Verified live; this is
  *      why the probe walks the advancement instances instead.)
  *   2. A HitPoints advancement on a `subclass` really does throw on `sortingValueForLevel`, reading
- *      the `system.hd` a subclass discards — the exact production crash.
+ *      the `system.hd` a subclass discards.
  *   3. A `class` carrying the SAME HitPoints advancement (with its `hd`) prepares cleanly, so the
  *      probe does not flag legitimate classes. This is the false-positive that would break every
  *      class in every world, so it is the most important assertion here.

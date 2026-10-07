@@ -1,18 +1,16 @@
 /**
- * The world-load report rides the courier client (cs#414, after cs#391).
+ * The world-load report rides the courier client (cs#391, cs#414).
  *
- * `_reportWorldLoaded` used to be a raw fetch with a credential rule of its own. cs#391
- * found it sending `credentials: 'include'` beside a Bearer, which the browser rejects
- * cross-origin because core withholds `Access-Control-Allow-Credentials` for the Foundry
- * origin; the fix made cookies conditional on having NO key. That still asked for
- * cookies whenever the page was keyless — refused cross-origin just the same — so in
- * the 2026-09-26 outage every keyless page lost the report, `pluginVersion` included,
- * and nobody could tell which module version had actually run.
+ * A raw fetch with a credential rule of its own breaks cross-origin: sending
+ * `credentials: 'include'` beside a Bearer is rejected because core withholds
+ * `Access-Control-Allow-Credentials` for the Foundry origin, and asking for cookies on a
+ * keyless page is refused just the same — so every keyless page would lose the report,
+ * `pluginVersion` included, and nobody could tell which module version had actually run.
  *
- * It now calls `_api.post`, so the key, the cookie rule and the cs#414 renewal are the
- * client's own, pinned in clients/api-client.test.js and seat-key-renewal.test.js.
- * `_linkPlatformUser` had the same shape (a client of its own, built from the key
- * `ready` started with) and moved with it. This file pins the routing.
+ * `_reportWorldLoaded` calls `_api.post`, so the key, the cookie rule and the cs#414
+ * renewal are the client's own, pinned in clients/api-client.test.js and
+ * seat-key-renewal.test.js. `_linkPlatformUser` uses `_api` the same way, not a client of
+ * its own built from the key `ready` started with. This file pins the routing.
  *
  * Pinned against the source rather than imported: module.js is one big import with ~30
  * side effects — the same technique as purge-legacy-world-api-key.test.js.

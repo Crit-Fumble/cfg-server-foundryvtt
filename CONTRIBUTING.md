@@ -35,11 +35,17 @@ CI-only because it pulls the pinned felddy base plus the static-ffmpeg source
 (~130 MB) for the declared `COPY --from`. ⚠️ A green proves the image is an additive
 superset carrying what cfg-core-server depends on. It does **not** prove Foundry
 works — the licensed half (host-binding, `admin.txt` authenticating, the LevelDB
-unlock) lives in `e2e/` and is deliberately not in CI.
+unlock, the `FOUNDRY_*` → `Config/options.json` mapping) lives in `e2e/` and is
+deliberately not in CI: a Foundry zip on a CI runner is an EULA question, and
+license activations are a limited resource. Nothing exercises the route prefix
+either: cfg-core-server launches every hosted Foundry with `FOUNDRY_ROUTE_PREFIX`,
+but `e2e/compose.yml` sets none and the specs pass `routePrefix: ''`, so a felddy
+bump that breaks `check_health.sh`'s route-prefixed request passes both CI and
+`e2e/`.
 
 The base build is felddy plus one declared static-ffmpeg layer and needs no npm
 auth or secrets. Keep every
-change **additive and reversible** — the README's migration section is the
+change **additive and reversible** — the README's "Design" section is the
 contract; a wrapper that diverges from felddy's env/volume contract is a bug.
 
 ## End-to-end tests
@@ -54,15 +60,16 @@ npm run e2e:logs                # follow logs
 npm run e2e:down                # tear down (-v)
 ```
 
-`e2e/` bakes a real dnd5e system fixture and serves Foundry on `:30000`. See
-`e2e/run.sh` for the flow.
+`e2e/run.sh` seeds the test world, dnd5e and the dev install's signed, host-bound
+license once from a provisioned Foundry install (`FOUNDRY_WORLD_SRC`, else the
+`.dev-state` storage roots) and serves Foundry on host port `E2E_FOUNDRY_PORT`
+(default 30001). See `e2e/run.sh` for the flow.
 
 ## The Server Manager module (`module/`)
 
 The module has its own npm install — **tokenless**: it depends on nothing
-private (the code-editor validators were vendored into
-`module/scripts/lib/code-editor-core.js` on 2026-08-19, dt#623) — and its own
-suites:
+private (the code-editor validators are vendored into
+`module/scripts/lib/code-editor-core.js`) — and its own suites:
 
 ```bash
 cd module
@@ -72,6 +79,14 @@ npm run build:zip        # pack smoke: dist/module.json + dist/module.zip
 npm run test:foundry:up  # integration stack (needs a licensed Foundry account —
 npm run test:foundry     #   see module/tests/.env.test.example)
 ```
+
+⚠️ `npm run build:zip`, and so every release's `module.zip`, packs only
+`module.json` plus `scripts/`, `styles/` and `lang/` (`PACK_DIRS` in
+`module/scripts/build-zip.js`). The dev stack (core-server copies the whole
+`module/` directory) and the integration harness (bind-mounts `module/`) load
+everything, so a file in any other directory, such as `templates/*.hbs`, works
+locally and passes CI but is missing in production. Add any new runtime
+directory to `PACK_DIRS`.
 
 Husky pre-commit/pre-push at the repo root run the module's unit tests. The
 module id `crit-fumble-core` must never change (worlds key their enable flag on

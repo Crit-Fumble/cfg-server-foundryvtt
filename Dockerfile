@@ -10,24 +10,23 @@
 # download/cache, the license host-binding, Config/admin.txt, the /auth /join
 # /setup surface, the /data layout, and uid 1000:1000.
 #
-# ⚠️ THE UID IS 1000:1000, NOT 1000:1001 — this line said 1001 until 2026-08-15,
-# and so does README.md. 1001 is CFG_DATA_GID, a SUPPLEMENTARY group cfg-core-server
-# adds at launch (`groupAdd`), never the image's own gid. Verified: `id` in this
-# image reports uid=1000(node) gid=1000(node). check-felddy-contract.mjs asserts
-# the real values, so a reader who "fixes" the image to match the old prose fails CI.
+# ⚠️ THE UID IS 1000:1000, NOT 1000:1001. 1001 is CFG_DATA_GID, a SUPPLEMENTARY
+# group cfg-core-server adds at launch (`groupAdd`), never the image's own gid.
+# Verified: `id` in this image reports uid=1000(node) gid=1000(node).
+# check-felddy-contract.mjs asserts the real values, so a reader who "fixes" the
+# gid to 1001 fails CI.
 #
-# Why pin the DIGEST, not the rolling `:14` tag: felddy's :14 shifts under you
-# (cfg-core-server already documents felddy rolling 14.361 -> 14.364 stranding
-# installs). A digest makes the image reproducible + the swap/rollback symmetric.
+# Why pin the DIGEST, not the rolling `:14` tag: felddy's :14 shifts under you,
+# and a roll can strand installs. A digest makes the image reproducible + the
+# swap/rollback symmetric.
 #
 # ── THE PIN BELOW IS felddy 14.368 ──────────────────────────────────────────
 # Resolve it against the REGISTRY manifest endpoint, not Docker Hub's tag JSON:
 # `:14` and `:14.<n>` must both answer with the digest on the FROM line below.
 #
 # ⛔ DO NOT RESTATE SPECIFIC DIGESTS IN THIS COMMENT. They rot at every bump —
-# this paragraph named the 14.364/14.365 pair through the 14.366 bump and the
-# 14.365/14.366 pair through 14.367, and upstream-watch only rewrites the header
-# line above. State the METHOD; the FROM line is the value.
+# upstream-watch only rewrites the header line above. State the METHOD; the FROM
+# line is the value.
 #
 # ⚠️ AND THE PIN HAS A SECOND HOME: module/tests/docker-compose.yml pins the
 # same base for the licensed integration harness. C7 in check-felddy-contract
@@ -42,22 +41,24 @@
 # digest changes the felddy DEFAULT the image ships with; it does not change
 # what any launch runs.
 #
-# The daily `upstream-watch` in cfg-core-dev-tools now watches this line and
-# opens a bump PR when felddy's `:14` moves — before that it rotted silently for
-# a month. It rewrites the FROM digest and nothing else; if you restructure this
-# line, update the `foundryvtt` case in that workflow or its sed will hard-fail
-# (deliberately loud, never a quiet no-op).
+# The daily `upstream-watch` in cfg-core-dev-tools watches this line and opens a
+# bump PR when felddy's `:14` moves. It rewrites the FROM digest, the same digest
+# in module/tests/docker-compose.yml, and the version in the header line above —
+# nothing else; if you restructure this line, update the `foundryvtt` case in that
+# workflow or its sed will hard-fail (deliberately loud, never a quiet no-op).
 #
-# Future additive RUNTIME capabilities land behind default-OFF env flags, each on
-# its own prove-passthrough cycle: a CO-LOCATED headless service-GM provisioning
-# agent (SERVICE_GM_ENABLED, talking to localhost:30000). NOT present yet.
+# Any additive RUNTIME capability lands behind a default-OFF env flag, each on
+# its own prove-passthrough cycle. The headless service-GM is not one of them:
+# its drain driver is a separate one-shot image (agent/Dockerfile) the platform
+# spawns as a sibling container, so it never touches this image.
 #
-# ── THE ONE ADDITION: a static ffmpeg at /usr/local/bin/ffmpeg (2026-09-06) ────
-# Owner decision: ffmpeg lives in the Foundry image "for now" (shared media deps
-# may be lifted across kinds later). Foundry animates WEBM tokens and never GIF,
-# so GMs need a converter next to their world data. It is NOT a runtime switch
-# and needs no env flag: nothing in felddy ever calls it, so the image behaves
-# byte-for-byte like felddy until something runs the binary on purpose.
+# ── THE ONE ADDITION: a static ffmpeg at /usr/local/bin/ffmpeg ───────────────
+# Owner decision (2026-09-06): ffmpeg lives in the Foundry image "for now"
+# (shared media deps may be lifted across kinds later). Foundry animates WEBM
+# tokens and never GIF, so GMs need a converter next to their world data. It
+# is NOT a runtime switch and needs no env flag: nothing in felddy ever calls
+# it, so the image behaves byte-for-byte like felddy until something runs the
+# binary on purpose.
 #
 # HOW IT IS INVOKED — never `docker exec`. core-server reaches Docker through a
 # socket proxy whose allowlist has no exec; instead it starts THIS image as an
@@ -71,7 +72,7 @@
 # apt on this Debian base. The source is pinned by its manifest-LIST digest (not
 # a platform digest) so the same line resolves arm64 on a dev Mac and amd64 in
 # CI and prod — the contract check (P1) needs wrapper and base on one platform.
-# 9.0.1 (not the 7.1 first proposed) because 7.1 predates the 2026 batch of
+# 9.0.1, not 7.1, because 7.1 predates the 2026 batch of
 # demuxer/decoder CVEs (CVE-2026-39210..39218); the sandbox contains a decoder
 # bug, a current build avoids it. upstream-watch never bumps this digest — a
 # codec binary bump is a reviewed change (re-run the argv template + the
@@ -91,8 +92,8 @@
 # ffmpeg means a new index digest in BOTH places, and the mutation suite goes
 # red if they disagree.
 #
-# ⛔ BAKING THE crit-fumble-core PLUGIN IN WAS INVESTIGATED AND REJECTED (#1,
-# closed 2026-08-15). It is NOT a pending capability — it cannot work here, and
+# ⛔ BAKING THE crit-fumble-core PLUGIN IN WAS INVESTIGATED AND REJECTED (#1).
+# It is NOT a pending capability — it cannot work here, and
 # both reasons are already visible in this file:
 #   1. felddy declares VOLUME /data, and the plugin lives at
 #      <vttDataPath>/Data/modules/crit-fumble-core. Anything COPY'd there is

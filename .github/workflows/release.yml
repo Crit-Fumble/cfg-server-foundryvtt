@@ -12,14 +12,13 @@ name: release
 # The CFG platform launches campaign containers as `<imageName>:<foundryMajor>`
 # (foundry-platform getFoundryImageTag), so once `foundryImage` points here,
 # `cfg-server-foundryvtt:14` — NOT `:latest` — is the tag core-server actually
-# pulls at every user launch. It was published unconditionally until 2026-08-10,
-# which meant a `workflow_dispatch` from ANY branch could put un-promoted code on
-# the launch path while `latest` sat correctly gated one line below. Only the
-# absence of `foundryImage` pointing here kept that theoretical.
+# pulls at every user launch. Ungated, a `workflow_dispatch` from ANY branch would
+# put un-promoted code on the launch path while `latest` sat correctly gated one
+# line below.
 #
-# ⚠️ The org-wide guard does NOT cover this. `check-workflow-tag-coupling.mjs`
-# inspects `value=latest` lines only, so it reported this file green throughout.
-# Do not read a passing guard as proof the launcher-pulled tag is gated.
+# The org-wide guard, `check-workflow-tag-coupling.mjs` in cfg-core-dev-tools,
+# treats `14` as a floating alias and holds it to the same rule as `latest`: it
+# must name a `v*` tag ref.
 #
 # Also builds the service-GM drain DRIVER image (agent/) -> ghcr.io/crit-fumble/
 # cfg-foundry-service-gm, the one-shot headless Chromium container core-server's
@@ -76,18 +75,17 @@ jobs:
             type=sha,prefix=sha-,format=short
           # ⛔ THESE TWO ARE CORRECTIONS, NOT DECORATION. A CLI `--label` OVERRIDES the
           # Dockerfile's LABEL, and metadata-action generates its own
-          # org.opencontainers.image.* set from GitHub repo metadata. Measured against
-          # the PUBLISHED ghcr :latest on 2026-08-15, that silently replaced two of the
-          # four labels the Dockerfile declares:
+          # org.opencontainers.image.* set from GitHub repo metadata. Left alone, that
+          # silently replaces two of the labels the Dockerfile declares:
           #
           #   licenses    AGPL-3.0-only  ->  NOASSERTION       ⛔ wrong, and it is a
           #                                                       LICENSE claim on a
           #                                                       published artifact
           #   description the Dockerfile's -> the GitHub repo blurb
           #
-          # So the image users pull disagreed with the image CI verifies, in exactly
-          # the dimension check-felddy-contract.mjs asserts (P4). Re-stating them here
-          # puts the Dockerfile back in charge of its own identity while KEEPING
+          # So without these, the image users pull disagrees with the image CI verifies,
+          # in exactly the dimension check-felddy-contract.mjs asserts (P4). Re-stating
+          # them here keeps the Dockerfile in charge of its own identity while KEEPING
           # metadata-action's genuinely useful additions (created, revision, version) —
           # which is why this is an override list and not a `labels:` deletion.
           labels: |
@@ -160,12 +158,11 @@ jobs:
     # accepted: hosted launches always install latest, and per-install pinning
     # is the Foundry APP version's job, never the module's.
     #
-    # The flip to this channel landed 2026-08-07: `foundryPluginManifestUrl` now
-    # points here in all three cfg-core-server `config/*.json`, in the server.ts
-    # code fallback (cfg-core-server #290) and in dev-tools'
+    # `foundryPluginManifestUrl` points here in all three cfg-core-server
+    # `config/*.json`, in the server.ts code fallback and in dev-tools'
     # `orchestration/config-overrides/production.json`, which is the file the
-    # RUNNING core-server actually reads. Hosted worlds install these assets from
-    # the next production deploy onward.
+    # RUNNING core-server actually reads. Hosted worlds install these assets at
+    # every launch.
     #
     # ⚠️ So a release here IS a change to what every hosted world runs. There is
     # no separate "publish the module" step to forget and no staging tier between

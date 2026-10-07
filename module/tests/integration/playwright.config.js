@@ -27,7 +27,7 @@ const FOUNDRY_URL = process.env.FOUNDRY_URL || 'http://localhost:30000'
 
 // GL backend: hardware (this machine's GPU) by default, software (SwiftShader,
 // headless) when CFG3D_GL=software. Foundry's canvas is WebGL (PIXI), so every
-// in-canvas spec needs a GL context, not just the 3D overlay this was built for.
+// in-canvas spec needs a GL context.
 // Hardware needs the FULL Chromium (headed) — the headless shell can't reach the
 // GPU. We point at the newest installed Playwright Chromium so no extra download
 // is needed (CFG3D_CHROME overrides).

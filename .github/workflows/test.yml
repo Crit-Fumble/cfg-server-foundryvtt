@@ -1,7 +1,7 @@
 name: test
 
-# CI for the CFG Server Manager Foundry module (module/) AND, since 2026-08-15,
-# the container wrapper's felddy contract (check-felddy-contract.mjs).
+# CI for the CFG Server Manager Foundry module (module/) AND the container
+# wrapper's felddy contract (check-felddy-contract.mjs).
 #
 # ⚠️ The wrapper is verified at TWO altitudes and only one of them is here. This
 # workflow proves the image is an additive superset of the pinned base and still
@@ -34,9 +34,9 @@ jobs:
           cache: npm
           cache-dependency-path: module/package-lock.json
       # Tokenless on purpose: the module has ZERO @crit-fumble/* dependencies
-      # (vendored 2026-08-19, dt#623) — this job runs on any fork, no org
-      # token, no GitHub Packages. If npm ci ever needs auth again, a public
-      # repo has regressed to depending on a private package.
+      # — this job runs on any fork, no org token, no GitHub Packages. If npm ci
+      # ever needs auth, a public repo has regressed to depending on a private
+      # package.
       - run: npm ci
       - run: npm test
       # Pack smoke — build-zip walks the real tree, so a deleted/renamed runtime
@@ -45,13 +45,12 @@ jobs:
 
   # The service-GM driver image ships its own Playwright, and agent/Dockerfile
   # requires it to move in lockstep with the root lock. `npm ci` inside the image
-  # build only compares agent/package.json to agent/package-lock.json, so the
-  # third edge of that triangle was enforced by a comment alone — the same shape
-  # as the base digest that "read as pinned" while Playwright floated below it.
+  # build only compares agent/package.json to agent/package-lock.json, so this
+  # job checks the third edge of that triangle.
   #
   # No npm install, no registry, no Docker: the check reads three committed JSON
   # files. Deliberately NOT folded into `unit`, whose working-directory is
-  # `module/` and whose npm auth this does not need.
+  # `module/` and whose `npm ci` this does not need.
   agent-pin:
     name: Agent Playwright pin
     runs-on: ubuntu-latest
@@ -65,10 +64,10 @@ jobs:
 
   # The module's release channel is `releases/latest/download/`, named by
   # module.json's own manifest/download URLs — so a `v*` tag IS the publish, with
-  # no separate step and no staging tier. Nothing checked that the VERSION moved
+  # no separate step and no staging tier. This job checks that the VERSION moved
   # when the packed tree did.
   #
-  # Hosted worlds survive that by accident (syncCfgPlugin reinstalls with
+  # Hosted worlds survive a missed bump by accident (syncCfgPlugin reinstalls with
   # force: true every launch, never reading the version). Self-hosted worlds do
   # not: Foundry compares the manifest version to decide an update exists, so an
   # unbumped release leaves them on old code reporting itself up to date.
@@ -92,9 +91,10 @@ jobs:
           node-version-file: .nvmrc
       - run: npm run test:module-version
 
-  # The Dockerfile is a pure passthrough — FROM + four LABELs — and its load-bearing
-  # rule ("DO NOT add an ENTRYPOINT") was enforced by a COMMENT. Same shape as the two
-  # guards above, one layer down: this one builds the image.
+  # The Dockerfile is the pinned FROM, one declared COPY (the static ffmpeg) and five
+  # LABELs, and its load-bearing rule ("DO NOT add an ENTRYPOINT") lives in a COMMENT;
+  # this job enforces it. Same shape as the two guards above, one layer down: this one
+  # builds the image.
   #
   # It proves three things nothing else does: the Dockerfile SOURCE added no forbidden
   # instruction, the built image is still an additive superset of the pinned base
@@ -102,7 +102,7 @@ jobs:
   # felddy's 13 /home/node scripts byte-identical), and the values cfg-core-server
   # depends on are intact (uid 1000:1000, WORKDIR, non-empty CMD, HEALTHCHECK, PID 1,
   # prompt SIGTERM). It is the guard on the daily upstream-watch bump PR, which
-  # rewrites the FROM digest by sed — until now nothing looked at what came back.
+  # rewrites the FROM digest by sed.
   #
   # NO LICENSE, NO SECRET, NO npm ci, NO GHCR LOGIN — the scripts use only node
   # built-ins, and the one network dependency is an anonymous Docker Hub pull of the
@@ -141,12 +141,11 @@ jobs:
   # which reports as neither pass nor fail and hangs the PR.
   # ⚠️ FAIL-CLOSED, AND IT MUST STAY THAT WAY. `success` and `skipped` pass;
   # EVERY other result fails, including ones GitHub has not documented.
-  # This was a denylist (`failure` or `cancelled`) in cfg-foundry-plugin until
-  # 2026-08-06, when an Actions partial outage produced `"result": "abandoned"`
-  # — which matched neither, so the gate reported SUCCESS over a job that never
-  # ran. CI Gate is the ONLY required check, so that made branch protection
-  # satisfiable with zero tests. Never enumerate the bad values; enumerate the
-  # good ones.
+  # A denylist (`failure` or `cancelled`) misses them: an Actions partial outage
+  # can produce `"result": "abandoned"`, which matches neither, so the gate
+  # reports SUCCESS over a job that never ran. CI Gate is the ONLY required
+  # check, so that makes branch protection satisfiable with zero tests. Never
+  # enumerate the bad values; enumerate the good ones.
   ci-gate:
     name: CI Gate
     if: always()
