@@ -197,8 +197,11 @@ const SERVER_403_CODES = {
     handling: 'unreachable',
     emitted: true,
     unreachableBecause: 'route-not-called',
-    pathMarkers: ['/data-ops'],
-    why: 'installation-data-ops.ts, mounted at /api/v1/installations/:installationId/data-ops. This module calls no data-ops route.',
+    pathMarkers: ['/data-ops', '/logs', '/restart', '/foundry/launch'],
+    why:
+      'Container ops are the installation owner\'s or an admin\'s (cs#472): installation-data-ops.ts (/data-ops), ' +
+      'foundry-ops.ts (log tail and restart under /api/v1/account/foundry/installations/:id) and the campaign ' +
+      'foundry-launch.ts stop and logs routes. This module calls none of them.',
   },
 
   WORLD_NOT_GRANTED: {
@@ -211,16 +214,6 @@ const SERVER_403_CODES = {
       'installation-data-ops.ts. Same route family as OWNER_ONLY, and NOT a .status(403).send() — it is why ' +
       'this scanner needs its second shape. ⚠️ Shape B also matches the TYPE ALIAS at paths.ts:46, so this ' +
       "code's presence would survive deletion of the real send. An over-count, but worth knowing.",
-  },
-
-  no_access: {
-    handling: 'unreachable',
-    emitted: true,
-    unreachableBecause: 'route-not-called',
-    pathMarkers: ['/api/foundry/auth'],
-    why:
-      'routes/v1/public/foundry-auth.ts, mounted at POST /api/foundry/auth/validate — the Foundry SSO validate ' +
-      'endpoint, called by the Foundry SERVER during login, never by this module. Lowercase by local convention.',
   },
 
   CASHOUT_FROZEN: {
