@@ -76,32 +76,27 @@ test('a value on the line after an empty key is not exempt', { skip }, () => {
   assert.ok(has(findings, 'cfg-auth-secret', 'app.env', 1), JSON.stringify(findings))
 })
 
-test('genuinely empty assignments still pass', { skip }, () => {
+test('genuinely empty assignments pass because no rule matches a bare key', { skip }, () => {
   const empties = [`${AUTH}=`, 'export LIVEKIT_API_SECRET=', "CORE_SECRET=''"].join('\n')
   assert.deepEqual(scan({ 'app.env': `${empties}\n` }).findings, [])
+})
 
-  // No shipped rule matches a bare key, so on its own the case above passes
-  // with or without the empty-assignment entry. A probe rule that DOES match
-  // the key proves the entry is what exempts it, and only when the value is empty.
-  const root = mkdtempSync(join(tmpdir(), 'gitleaks-probe-'))
-  try {
-    const probe = join(root, 'probe.toml')
-    writeFileSync(probe, `${readFileSync(CONFIG, 'utf8')}
-[[rules]]
-id = "probe-key-name"
-description = "test-only: flags the key, whatever its value"
-regex = '''(?:PROBE_KEY|probeKey)["']?[ \\t]*[:=]'''
-`)
-    const ok = ['PROBE_KEY=', 'export PROBE_KEY=', "PROBE_KEY=''", 'PROBE_KEY: ""', '  "probeKey": "",', 'PROBE_KEY := ']
-    for (const line of ok) assert.deepEqual(scan({ 'a.env': `${line}\n` }, probe).findings, [], line)
-    // Line 2+ and CRLF: gitleaks prefixes a line-2+ match with its '\\n', and a CRLF line ends in '\\r'.
-    assert.deepEqual(scan({ 'a.env': `FOO=bar\n${ok.join('\n')}\n` }, probe).findings, [], 'empty keys on line 2+')
-    assert.deepEqual(scan({ 'a.env': `${ok.join('\r\n')}\r\n` }, probe).findings, [], 'CRLF')
-    assert.equal(scan({ 'a.env': 'FOO=bar\nPROBE_KEY=x\n' }, probe).findings.length, 1, 'a value on line 2 is still flagged')
-    for (const line of ['PROBE_KEY=x', '"probeKey": "v",', 'PROBE_KEY= # set me']) {
-      assert.equal(scan({ 'a.env': `${line}\n` }, probe).findings.length, 1, line)
-    }
-  } finally {
-    rmSync(root, { recursive: true, force: true })
-  }
+// dt#724: a line-target entry exempting any line that ends in '=' or ':' also
+// exempted a token alone on such a line. No allowlist entry may test the line.
+test("a token alone on a line before '=' or ':' is flagged", { skip }, () => {
+  const alnum = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'
+  const pat = () => `ghp_${Array.from(randomBytes(36), (b) => alnum[b % alnum.length]).join('')}`
+  const { findings } = scan({ 'a.env': `${pat()}=\n${pat()}:\n  ${pat()} =\n` })
+  for (const line of [1, 2, 3]) assert.ok(has(findings, 'github-pat', 'a.env', line), JSON.stringify(findings))
+  assert.doesNotMatch(readFileSync(CONFIG, 'utf8'), /regexTarget\s*=\s*"line"/)
+})
+
+test('the path allowlist is anchored at the repo root', { skip }, () => {
+  const env = `${AUTH}=${padded()}\n`
+  // Exempt: the paths as written.
+  assert.deepEqual(scan({ '.env.local.example': env, 'module/package-lock.json': env }).findings, [])
+  // Not exempt: lookalikes the unanchored patterns used to match, and entries this repo dropped.
+  const near = ['tests/a.env', 'config/a.json', 'docs/a.env']
+  const { findings } = scan(Object.fromEntries(near.map((p) => [p, env])))
+  for (const p of near) assert.ok(has(findings, 'cfg-auth-secret', p, 1), `${p} ${JSON.stringify(findings)}`)
 })
