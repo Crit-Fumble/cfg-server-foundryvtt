@@ -8,9 +8,9 @@
  *                    browser's existing session cookie (credentials: 'include').
  *                    No key needed; the cookie is included automatically.
  *
- *   Bearer key     — the hosted seat key, or the installation owner's key, both
- *                    set automatically by the module on a hosted world (see
- *                    host-context.js). The key is sent as
+ *   Bearer key     — the hosted seat key, a cookie the platform sets on a
+ *                    hosted world (see host-context.js), or a self-hosted
+ *                    pair key. The key is sent as
  *                    `Authorization: Bearer cfk_...` on every request.
  *
  * Usage:
