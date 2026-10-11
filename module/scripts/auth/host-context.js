@@ -154,8 +154,7 @@ function _pageOrigin() {
  * Precedence, and the order is deliberate:
  *   1. injected `__CFG_HOSTED_CONTEXT__.endpoint` — the contracted channel.
  *   2. the `cfg_core_endpoint` cookie — server-declared, and the only channel that
- *      reaches a NON-OWNER GM or a player (the hosted-context endpoint is
- *      owner-scoped and 404s everyone else). forward-auth mints it on BOTH edges —
+ *      reaches a seated browser. forward-auth mints it on BOTH edges —
  *      core and the Foundry host — on every top-level navigation, so a same-origin
  *      dev/e2e stack is declared too, never inferred from the page. Since cs#455 it
  *      is NOT trusted blindly: every world on the origin can write it, so it is
@@ -457,7 +456,8 @@ export function getHostKind() {
 
 /**
  * Apply the injected context to Foundry settings — populates `coreApiUrl` +
- * `apiKey` + `installationId` from the global. No-op when self-hosted.
+ * `apiKey` + `installationId` from the global. Without the global, a hosted
+ * world only has a stored `apiKey` cleared. No-op when self-hosted.
  *
  * Idempotent: the values are only written when they differ from the existing
  * settings, so a settings.set during init doesn't fire spurious change hooks.
@@ -474,94 +474,12 @@ export async function applyHostedContext() {
     return 'cfg-hosted'
   }
 
-  // 2. Programmatic pairing: cfg-hosted Foundry is served same-origin under
-  //    `/servers/foundryvtt/<installationId>/…`, so fetch the installation's
-  //    host key from core with the browser's session cookie. The endpoint is
-  //    OWNER-scoped — the owner's plugin gets a `cfk_…` key it uses as a Bearer
-  //    token so the status/activity heartbeats authenticate AS the installation
-  //    (no longer piggybacking on whichever user's session is connected). A
-  //    non-owner GM gets no key and stays on same-origin session-cookie auth.
-  const installationId = _installationIdFromPath()
-  if (!installationId) return 'self-hosted'
-
-  const origin = _originOrNull()
-  if (!origin) return 'cfg-hosted'
-
-  // ⛔ CROSS-ORIGIN THIS CALL CANNOT SUCCEED, SO DO NOT MAKE IT (cs#391).
-  //
-  // Three independent reasons, any one of which is fatal, and none of which a
-  // retry or a Bearer can get around:
-  //   1. it is fetched from THIS PAGE's origin, which on the Foundry host is not
-  //      core — Caddy 302s it to core and the browser re-runs CORS on the target;
-  //   2. `hosted-context` is session-only since 401c7ff — an API key is refused
-  //      there by design, because a credential must not be able to mint another;
-  //   3. the session cookie is refused from this origin twice over — CORS
-  //      withholds `Access-Control-Allow-Credentials`, and cookie-origin-trust
-  //      rejects it server-side even if a browser sent it.
-  //
-  // It failed loudly on every world load, and the `catch` below logged it as
-  // "non-fatal" — true, but it trained the console to show a CORS error as
-  // normal, which is exactly how a real one gets missed. The cookie path below
-  // (`cfg_core_endpoint` + `cfg_foundry_seat_key`) is what serves this origin,
-  // and unlike this endpoint it reaches non-owner GMs and players too.
-  // `resolveCoreEndpoint` has no page-origin step (cs#414), so with nothing
-  // declared this is the stored setting — a value that names ANOTHER origin on a
-  // world whose cookies lapsed on the Foundry host, which is exactly when this
-  // fetch must not be made from here. NOTHING known at all (the GM blanked the
-  // setting and the cookies lapsed) is treated the same way: `new URL(null,
-  // origin)` would resolve RELATIVE and read as same-origin, i.e. fetch from the
-  // Foundry host. A same-origin install is never in that state — the setting is
-  // registered with a non-empty default and the platform declares the endpoint
-  // by cookie on every stack — so refusing here disables nothing legitimate. A
-  // value that is not an absolute URL resolves RELATIVE to this origin (or, if
-  // it cannot parse at all, lands in the catch) and reads as same-origin — a
-  // wrong-host fetch that now fails loudly as a 404 rather than a CORS error.
-  const { endpoint: declaredEndpoint } = resolveCoreEndpoint()
-  let coreIsThisOrigin
-  if (!_isNonEmptyString(declaredEndpoint)) {
-    coreIsThisOrigin = false
-  } else {
-    try {
-      coreIsThisOrigin = new URL(declaredEndpoint, origin).origin === origin
-    } catch {
-      coreIsThisOrigin = true
-    }
-  }
-  if (!coreIsThisOrigin) {
-    // Not a warning: this is the expected, correct path on a separated origin.
-    console.debug('CFG Core | core is a different origin — using the declared endpoint + seat key, not hosted-context')
-    await _setIfChanged('apiKey', '')
-    return 'cfg-hosted'
-  }
-
-  try {
-    const res = await fetch(
-      `${origin}/api/v1/account/foundry/hosted-context?installationId=${encodeURIComponent(installationId)}`,
-      { method: 'GET', headers: { accept: 'application/json' }, credentials: 'include' },
-    )
-    if (res.ok) {
-      const ctx = await res.json()
-      if (ctx && _isNonEmptyString(ctx.apiKey)) {
-        // ⛔ NOT `ctx.endpoint || origin`: `origin` is this PAGE's origin, which is
-        // core only until cs#391 moves hosted Foundry to its own host. The server
-        // always sends `endpoint` (foundry-management.ts returns serverConfig.app.url),
-        // so a missing one is a contract break worth surfacing, not worth papering over.
-        if (_isNonEmptyString(ctx.endpoint)) {
-          await _setIfChanged('coreApiUrl', ctx.endpoint)
-        } else {
-          console.warn('CFG Core | hosted-context returned no endpoint; leaving coreApiUrl as-is')
-        }
-        await _setIfChanged('apiKey', ctx.apiKey)
-        await _setIfChanged('installationId', ctx.installationId || installationId)
-        return 'cfg-hosted'
-      }
-    }
-  } catch (err) {
-    console.warn('CFG Core | hosted-context fetch failed (non-fatal):', err?.message || err)
-  }
-  // No key (non-owner GM, or a transient failure): CLEAR any stale Bearer key so
-  // the plugin falls back to same-origin session-cookie auth instead of sending
-  // a dead token. installationId/coreApiUrl are set by the ready-hook auto-correct.
+  // 2. A hosted world authenticates with its seat key, the `cfg_foundry_seat_key`
+  //    cookie the platform sets on every navigation (`readSeatKey`). Core mints no
+  //    installation owner key any more (cfg-core-server#454), so a key an older
+  //    version stored here is dead: clear it, so the client never sends it when
+  //    the seat key is missing. No request is made.
+  if (!_installationIdFromPath()) return 'self-hosted'
   await _setIfChanged('apiKey', '')
   return 'cfg-hosted'
 }
@@ -572,15 +490,6 @@ function _installationIdFromPath() {
     if (typeof window === 'undefined') return null
     const m = window.location?.pathname?.match(/^\/servers\/foundryvtt\/([^/]+)/)
     return m?.[1] || null
-  } catch {
-    return null
-  }
-}
-
-/** Same-origin base for the hosted-context fetch, or null when unavailable. */
-function _originOrNull() {
-  try {
-    return typeof window !== 'undefined' ? window.location?.origin || null : null
   } catch {
     return null
   }

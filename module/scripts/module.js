@@ -173,9 +173,10 @@ Hooks.once('init', () => {
   // single source of truth; plugin-side flows that need a campaign id
   // iterate over the linked set returned by /api/v1/account/foundry/campaigns.
 
-  // Set automatically on cfg-hosted worlds by applyHostedContext() (the
-  // installation owner's key). Hidden from the settings UI so users can't paste
-  // in arbitrary strings.
+  // The key a self-hosted world gets from the pair flow. A cfg-hosted world
+  // does not use it: its credential is the seat-key cookie, and
+  // applyHostedContext() clears anything stored here. Hidden from the settings
+  // UI so users can't paste in arbitrary strings.
   //
   // ⛔ CLIENT SCOPE IS LOAD-BEARING — DO NOT CHANGE IT BACK TO 'world'.
   // This setting previously used `scope: 'world'`, justified by a comment
@@ -188,10 +189,6 @@ Hooks.once('init', () => {
   // 'client' stores it in that browser's localStorage, so it stays with the
   // account it was issued to. Everything that uses it (heartbeat, provision
   // drain) runs in a connected GM's own tab and reads it from there.
-  //
-  // Client scope costs cfg-hosted worlds nothing: applyHostedContext()
-  // re-fetches the key from core on every load, in whichever browser the GM
-  // uses.
   //
   // Foundry v14 also offers `scope: 'user'` (per-user, stored server-side),
   // which would keep persistence AND privacy. It is NOT used here: the
@@ -216,11 +213,9 @@ Hooks.once('init', () => {
     default: '',
   })
 
-  // Host-environment detection (#699): when Foundry is cfg-hosted, the plugin
-  // fetches its installation host key programmatically and stores it as the
-  // Bearer `apiKey` setting. That runs in the `ready` hook (awaited, before the
-  // API client is built) — see `applyHostedContext()` — so settings are live and
-  // the key is in place before the first heartbeat.
+  // Host-environment detection (#699): when Foundry is cfg-hosted, the `ready`
+  // hook runs `applyHostedContext()` (awaited, before the API client is built),
+  // which clears any stored `apiKey` so the seat-key cookie is the only Bearer.
 
   /**
    * Per-campaign officer position configuration (preset + requireLeader flag).
@@ -336,8 +331,8 @@ Hooks.once('ready', async () => {
 
   // BEFORE anything else touches the key: drop the pre-3.2.0 world-scoped row.
   // Ordering is deliberate — applyHostedContext() below writes the CLIENT-scoped
-  // key, and doing the purge first means a single load ends with exactly one
-  // copy of the credential, in the right place.
+  // key setting, and doing the purge first means a single load never ends with a
+  // copy of a credential in world data.
   await purgeLegacyWorldApiKey()
 
   // Auto-correct `coreApiUrl` + `installationId` when running cfg-hosted
@@ -354,7 +349,7 @@ Hooks.once('ready', async () => {
       // ⛔ Was `window.location.origin`. That is core ONLY while hosted Foundry is
       // served from core itself; since cs#391 it is the Foundry host, and writing it
       // here PERSISTS the wrong endpoint into world data — outliving the page and
-      // clobbering the correct value applyHostedContext just fetched from the server.
+      // clobbering a correct stored value.
       // Resolve instead, and never overwrite a server-DECLARED endpoint.
       //
       // ⛔ Only the INJECTED context is persisted, never the cookie (cs#455 F1). The
@@ -407,18 +402,16 @@ Hooks.once('ready', async () => {
     console.warn('CFG Core | FilePicker default path setup failed (non-fatal):', err)
   }
 
-  // Programmatic pairing: for cfg-hosted Foundry, fetch + store the installation
-  // host key (Bearer) BEFORE building the API client, so the heartbeats
-  // authenticate as the installation. Owner-scoped on the server; a non-owner GM
-  // gets no key and `applyHostedContext` clears any stale one → session fallback.
-  // Awaited so the setting is live before the first heartbeat fires below.
-  // GM-only: it writes world settings, and a non-GM never receives a key — a
-  // player stays on same-origin session auth (apiKey below resolves to null).
+  // cfg-hosted Foundry: clear any `apiKey` an older version stored BEFORE building
+  // the API client, so the seat-key cookie is the only Bearer it can send (core
+  // mints no installation owner key any more, cfg-core-server#454). Awaited so the
+  // setting is settled before the first heartbeat fires below. GM-only: it writes
+  // settings.
   if (isGM && getHostKind() === 'cfg-hosted') {
     try {
       await applyHostedContext()
     } catch (err) {
-      console.warn('CFG Core | applyHostedContext failed (non-fatal, using session auth):', err?.message || err)
+      console.warn('CFG Core | applyHostedContext failed (non-fatal):', err?.message || err)
     }
   }
 
@@ -429,14 +422,11 @@ Hooks.once('ready', async () => {
   // downgrades the POSTs to GET (cs#414), so it is not in the precedence at all.
   // The `||` is belt-and-braces: the resolver's own last step is this setting.
   const apiUrl = resolveCoreEndpoint().endpoint || game.settings.get(MODULE_ID, 'coreApiUrl')
-  // cfg-hosted gets an installation key from `applyHostedContext` (programmatic
-  // pairing) or, if that couldn't mint one, an empty value → session-cookie auth
-  // (same-origin). An empty/absent setting → null → session-cookie auth.
-  // Seat key first: it is per-browser, short-lived and scoped to THIS seat, whereas
-  // the `apiKey` world setting is the installation OWNER's key that every seated
-  // player can read (cs#390). Once the platform sends a seat key, prefer it — and
-  // it is the only credential a non-owner GM or player has once core is a different
-  // origin, where same-origin cookie auth stops working. Absent today → unchanged.
+  // Seat key first: it is per-browser, short-lived and scoped to THIS seat, and on
+  // a cfg-hosted world it is the only credential there is — core is a different
+  // origin, where same-origin cookie auth does not work, and `applyHostedContext`
+  // has cleared the `apiKey` setting. The setting is the self-hosted pair key.
+  // Neither → null → session-cookie auth, which only a same-origin page can use.
   const apiKey = readSeatKey() || game.settings.get(MODULE_ID, 'apiKey') || null
 
   // apiKey set → Bearer token (seat key or installation key). Null →
