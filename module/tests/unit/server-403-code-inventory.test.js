@@ -58,7 +58,7 @@
  *     `rights-unhandled` with plausible prose stays green. The guard is against
  *     accidents, not against a bad call.
  *  6. THE CONSEQUENCE. Nothing here auto-re-pairs today (the module has no pair
- *     flow; applyHostedContext re-fetches the key on load) and the banner surfaces only
+ *     flow; applyHostedContext fetches nothing) and the banner surfaces only
  *     `offline`, so a misclassification currently costs a worse message, not a
  *     loop. The loop is LATENT — it arrives the first time someone wires
  *     automatic re-pair to `auth-failed`, at which point every already-installed

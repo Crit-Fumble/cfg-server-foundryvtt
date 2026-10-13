@@ -124,7 +124,7 @@ describe('applyHostedContext', () => {
   beforeEach(() => {
     globalThis.window = globalThis.window || {}
     delete globalThis.window.__CFG_HOSTED_CONTEXT__
-    // Default: NOT on the cfg-hosted route → no programmatic fetch.
+    // Default: NOT on the cfg-hosted route.
     globalThis.window.location = { pathname: '/game', origin: 'https://foundry.local' }
     globalThis.fetch = jest.fn()
     store = settingsStore({ coreApiUrl: 'https://default', apiKey: '', installationId: '' })
@@ -157,56 +157,32 @@ describe('applyHostedContext', () => {
     expect(game.settings.set).not.toHaveBeenCalled()
   })
 
-  it('programmatic pairing: cfg-hosted route + no global → fetches the host key and stores it', async () => {
-    globalThis.window.location = { pathname: '/servers/foundryvtt/rotfs/game', origin: 'https://core.crit-fumble.com' }
-    // Same-origin install = the STORED (or declared) endpoint is this page's origin.
-    // The resolver never infers that from the path (cs#414), so the fixture has to
-    // say it; the `https://default` sentinel above would read as cross-origin.
-    store = settingsStore({ coreApiUrl: 'https://core.crit-fumble.com', apiKey: '', installationId: '' })
-    globalThis.fetch = jest.fn(async () => ({
-      ok: true,
-      json: async () => ({ endpoint: 'https://core.crit-fumble.com', apiKey: 'cfk_minted', installationId: 'inst_abc', cfgUserId: 'owner_1' }),
-    }))
+  it('cfg-hosted route + no global → clears a stored key and makes no request', async () => {
+    globalThis.window.location = { pathname: '/servers/foundryvtt/rotfs/game', origin: 'https://foundryvtt.crit-fumble.com' }
+    store = settingsStore({ coreApiUrl: 'https://core.crit-fumble.com', apiKey: 'cfk_stale', installationId: 'inst_abc' })
 
     const { applyHostedContext } = await loadHostContext()
     const kind = await applyHostedContext()
 
     expect(kind).toBe('cfg-hosted')
-    expect(globalThis.fetch).toHaveBeenCalledWith(
-      'https://core.crit-fumble.com/api/v1/account/foundry/hosted-context?installationId=rotfs',
-      expect.objectContaining({ credentials: 'include' }),
-    )
-    expect(store.get('apiKey')).toBe('cfk_minted')
+    // Core mints no installation owner key (cfg-core-server#454): nothing to fetch.
+    expect(globalThis.fetch).not.toHaveBeenCalled()
+    // A key an older version stored is dead, so it is cleared: the seat key is the only Bearer.
+    expect(store.get('apiKey')).toBe('')
+    // The endpoint and installation id are the ready hook's to write, not this function's.
+    expect(store.get('coreApiUrl')).toBe('https://core.crit-fumble.com')
     expect(store.get('installationId')).toBe('inst_abc')
   })
 
-  it('programmatic pairing: non-owner GM (404) → clears any stale key so it falls back to session auth', async () => {
-    globalThis.window.location = { pathname: '/servers/foundryvtt/rotfs/game', origin: 'https://core.crit-fumble.com' }
-    store = settingsStore({ coreApiUrl: 'https://core.crit-fumble.com', apiKey: 'cfk_stale', installationId: 'inst_abc' })
-    globalThis.fetch = jest.fn(async () => ({ ok: false, status: 404, json: async () => ({}) }))
-
-    const { applyHostedContext } = await loadHostContext()
-    const kind = await applyHostedContext()
-
-    expect(kind).toBe('cfg-hosted')
-    expect(store.get('apiKey')).toBe('') // stale Bearer cleared → session-cookie auth
-  })
-
-  it('nothing known at all (setting blanked, cookies lapsed) → no hosted-context fetch from the page origin (cs#414)', async () => {
+  it('cfg-hosted route with no stored key → writes nothing', async () => {
     globalThis.window.location = { pathname: '/servers/foundryvtt/rotfs/game', origin: 'https://foundryvtt.crit-fumble.com' }
-    globalThis.document.cookie = ''
-    // `new URL(null, origin)` would resolve relative and read as same-origin —
-    // i.e. fetch hosted-context from the Foundry host, which 302s to core and
-    // fails CORS on every load. Unknown must mean "not this origin".
-    store = settingsStore({ coreApiUrl: '', apiKey: 'cfk_stale', installationId: '' })
-    globalThis.fetch = jest.fn()
 
     const { applyHostedContext } = await loadHostContext()
     const kind = await applyHostedContext()
 
     expect(kind).toBe('cfg-hosted')
     expect(globalThis.fetch).not.toHaveBeenCalled()
-    expect(store.get('apiKey')).toBe('')
+    expect(game.settings.set).not.toHaveBeenCalled()
   })
 
   it('skips the write when the setting already matches — no spurious change hooks', async () => {
@@ -417,14 +393,11 @@ describe('readSeatKey', () => {
   })
 })
 
-// ── cs#391: hosted-context is a SAME-ORIGIN-only call ─────────────────────────
-// From a page on Foundry's own host, a fetch of it with `credentials: 'include'`
-// cannot succeed, for three independent reasons — it 302s to core and re-runs
-// CORS on the target, the endpoint is session-only, and the cookie is refused
-// from that origin both by CORS and by cookie-origin-trust. Attempting it anyway
-// fails on EVERY world load, and logging that as "non-fatal" trains the console
-// to treat a CORS error as normal. That is how a real one gets missed.
-describe('applyHostedContext — cross-origin core (cs#391)', () => {
+// ── cfg-core-server#454: no request, whatever origin core is ──────────────────
+// The module used to fetch an installation owner key from core's `hosted-context`
+// route when core was this page's own origin. Core no longer mints that key and
+// the route is gone, so a hosted world makes no request on either shape.
+describe('applyHostedContext — makes no request on any origin shape', () => {
   let store
 
   beforeEach(() => {
@@ -435,74 +408,14 @@ describe('applyHostedContext — cross-origin core (cs#391)', () => {
     store = settingsStore({ coreApiUrl: 'https://core.crit-fumble.com', apiKey: 'cfk_stale', installationId: '' })
   })
 
-  it('does NOT fetch hosted-context when core is a different origin', async () => {
-    // The live shape: page on the Foundry host, core declared elsewhere.
-    globalThis.window.location = {
-      pathname: '/servers/foundryvtt/rotfs/game',
-      origin: 'https://foundryvtt.crit-fumble.com',
-    }
-    globalThis.document = { cookie: 'cfg_core_endpoint=https://core.crit-fumble.com' }
-
-    const { applyHostedContext } = await loadHostContext()
-    const kind = await applyHostedContext()
-
-    expect(kind).toBe('cfg-hosted')
-    // The whole point — no request is made at all.
-    expect(globalThis.fetch).not.toHaveBeenCalled()
-    // And the stale owner key is cleared, so nothing sends a dead Bearer.
-    expect(store.get('apiKey')).toBe('')
-  })
-
-  it('DOES fetch when core is this page\'s own origin — the same-origin path is unchanged', async () => {
-    globalThis.window.location = {
-      pathname: '/servers/foundryvtt/rotfs/game',
-      origin: 'https://core.crit-fumble.com',
-    }
-    globalThis.document = { cookie: 'cfg_core_endpoint=https://core.crit-fumble.com' }
-    globalThis.fetch = jest.fn(async () => ({
-      ok: true,
-      json: async () => ({
-        endpoint: 'https://core.crit-fumble.com',
-        apiKey: 'cfk_minted',
-        installationId: 'inst_abc',
-      }),
-    }))
-
-    const { applyHostedContext } = await loadHostContext()
-    await applyHostedContext()
-
-    expect(globalThis.fetch).toHaveBeenCalledTimes(1)
-    expect(store.get('apiKey')).toBe('cfk_minted')
-  })
-
-  it('with nothing declared, the STORED endpoint decides — same-origin stored → still fetches', async () => {
-    // No endpoint cookie, no injected global: the guard must not invent a
-    // cross-origin verdict and silently stop working on a same-origin install.
-    // The store in beforeEach already names this origin.
-    globalThis.window.location = {
-      pathname: '/servers/foundryvtt/rotfs/game',
-      origin: 'https://core.crit-fumble.com',
-    }
-    globalThis.document = { cookie: '' }
-    globalThis.fetch = jest.fn(async () => ({ ok: false, json: async () => ({}) }))
-
-    const { applyHostedContext } = await loadHostContext()
-    await applyHostedContext()
-
-    expect(globalThis.fetch).toHaveBeenCalledTimes(1)
-  })
-
-  it('with nothing declared and core stored elsewhere, does NOT fetch from this page\'s origin (cs#414)', async () => {
-    // A tab on the Foundry host whose 12h page cookies have lapsed. Answering with
-    // `location.origin` here would make this call 302 to core and die in CORS on
-    // every world load; the resolver reads the stored setting instead, sees another
-    // origin, and makes no request at all.
-    globalThis.window.location = {
-      pathname: '/servers/foundryvtt/rotfs/game',
-      origin: 'https://foundryvtt.crit-fumble.com',
-    }
-    globalThis.document = { cookie: '' }
-    globalThis.fetch = jest.fn(async () => ({ ok: false, json: async () => ({}) }))
+  it.each([
+    ['core is a different origin (the live shape)', 'https://foundryvtt.crit-fumble.com', 'cfg_core_endpoint=https://core.crit-fumble.com'],
+    ["core is this page's own origin (a same-origin stack)", 'https://core.crit-fumble.com', 'cfg_core_endpoint=https://core.crit-fumble.com'],
+    ['nothing declared, page cookies lapsed', 'https://foundryvtt.crit-fumble.com', ''],
+    ['an opaque origin (a sandboxed frame)', 'null', 'cfg_core_endpoint=https://core.crit-fumble.com'],
+  ])('%s', async (_name, origin, cookie) => {
+    globalThis.window.location = { pathname: '/servers/foundryvtt/rotfs/game', origin }
+    globalThis.document = { cookie }
 
     const { applyHostedContext } = await loadHostContext()
     const kind = await applyHostedContext()
@@ -510,21 +423,6 @@ describe('applyHostedContext — cross-origin core (cs#391)', () => {
     expect(kind).toBe('cfg-hosted')
     expect(globalThis.fetch).not.toHaveBeenCalled()
     expect(store.get('apiKey')).toBe('')
-  })
-
-  it('an OPAQUE origin falls back to same-origin rather than disabling the call', async () => {
-    // A sandboxed iframe reports `location.origin === 'null'` (the string), and
-    // `new URL(x, 'null')` throws. The catch must default to SAME-origin: that
-    // preserves today's behaviour, where defaulting the other way would silently
-    // switch off hosted-context for anyone embedding Foundry in a frame.
-    globalThis.window.location = { pathname: '/servers/foundryvtt/rotfs/game', origin: 'null' }
-    globalThis.document = { cookie: 'cfg_core_endpoint=https://core.crit-fumble.com' }
-    globalThis.fetch = jest.fn(async () => ({ ok: false, json: async () => ({}) }))
-
-    const { applyHostedContext } = await loadHostContext()
-    await applyHostedContext()
-
-    expect(globalThis.fetch).toHaveBeenCalledTimes(1)
   })
 })
 

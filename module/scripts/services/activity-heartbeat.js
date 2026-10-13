@@ -13,11 +13,11 @@
  * reporter; everyone else stays quiet. If that user disconnects, the next
  * one takes over on the following tick — no central coordination needed.
  *
- * Auth: posts through the shared CoreAPIClient, which attaches the world's
- * pre-minted installation API key (cfg-hosted) or the paired key
- * (self-hosted). The Core endpoint is owner-scoped, so any connected
- * client's report is accepted — the key identifies the installation, not
- * the reporting user.
+ * Auth: posts through the shared CoreAPIClient, which attaches this browser's
+ * seat key (cfg-hosted) or the paired key (self-hosted). The key identifies
+ * the reporting user, not the installation: core accepts a report from the
+ * installation's owner or from any member it lets into this world, so any
+ * connected client can be the reporter.
  *
  * Endpoint: POST /api/v1/installations/{installationId}/activity
  */
