@@ -4,8 +4,8 @@
  * Every authenticated plugin → CFG call goes through `fetchCfg`. It reads the
  * `coreApiUrl` setting (set automatically on Crit-Fumble hosted worlds) and
  * decides per call between the same-origin session cookie and a Bearer key:
- * the per-browser seat key first, then the `apiKey` setting (the hosted
- * owner's installation key).
+ * the per-browser seat key first, then the `apiKey` setting (a self-hosted
+ * pair key, which `applyHostedContext` clears on a hosted world).
  *
  * The file keeps its old name because three importers reference it. The
  * device-pair flow that used to live here (linking a world Crit-Fumble does
@@ -62,7 +62,7 @@ export function _coreIsSameOrigin(endpoint) {
 }
 
 /**
- * Read the client-scoped `apiKey` setting — the hosted owner's installation key.
+ * Read the client-scoped `apiKey` setting — a self-hosted pair key (empty when hosted).
  *
  * Client-scoped since the fix for the world-scope leak (see the setting's
  * registration in module.js): it lives in THIS browser's localStorage, never
@@ -131,9 +131,9 @@ export async function fetchCfg(path, init = {}) {
   // work, and the only usable credential is a Bearer.
   const sameOrigin = _coreIsSameOrigin(endpoint)
   // Seat key first: per-browser, short-lived, scoped to THIS seat, and the only
-  // credential a non-owner GM has once core is a different origin. Falls back to
-  // the `apiKey` setting (the hosted owner's installation key). Same precedence
-  // as module.js's client construction, deliberately.
+  // credential a seat has once core is a different origin. Falls back to the
+  // `apiKey` setting (a self-hosted pair key). Same precedence as module.js's
+  // client construction, deliberately.
   const apiKey = sameOrigin ? null : readSeatKey() || getCfgApiKey()
 
   const headers = new Headers(init.headers || {})

@@ -8,7 +8,7 @@
  *
  *   window.__CFG_HOSTED_CONTEXT__ = {
  *     endpoint:       'https://core.crit-fumble.com', // CFG endpoint URL
- *     apiKey:         'cfk_…',                        // pre-minted server key
+ *     apiKey:         'cfk_…',                        // Bearer key to store
  *     installationId: '<cuid>',                       // Foundry-instance row
  *     cfgUserId:      '<cuid>',                       // owner of the container
  *   }
@@ -18,8 +18,8 @@
  *     so `Hooks.once('init')` sees it on its first read.
  *   - All four fields are required; partial contexts are rejected and the
  *     plugin falls back to the URL-path detection below.
- *   - The apiKey is server-minted (the owner's installation key); the plugin
- *     treats it like any other stored key.
+ *   - The apiKey is whatever key the injector supplies; the plugin stores it and
+ *     treats it like any other key. Core itself mints no installation owner key.
  *
  * URL-path fallback (#699 follow-up): the `__CFG_HOSTED_CONTEXT__` injection
  * is not yet implemented on the proxy. Until it lands, the only signal a
@@ -205,9 +205,9 @@ export function resolveCoreEndpoint() {
 /**
  * The per-seat Bearer key the platform hands THIS browser, or null.
  *
- * Non-owner GMs and players have never had a Bearer credential — they authenticate
- * to core by same-origin session cookie (api-client.js), which stops working the
- * moment core is a different origin. This cookie is how they get one. Absent today.
+ * On a hosted world this cookie is the only Bearer credential a seat has, the
+ * owner's included: core is a different origin there, where the same-origin
+ * session cookie (api-client.js) does not work.
  */
 export function readSeatKey() {
   return _cookie(SEAT_KEY_COOKIE)

@@ -17,8 +17,8 @@
  * the drainer; everyone else stays quiet. Creating with a duplicate `_id`
  * throws, so this election (plus the per-id existence check) prevents races.
  *
- * Auth: posts through the shared CoreAPIClient (installation key cfg-hosted /
- * paired key self-hosted). The endpoints are owner-scoped.
+ * Auth: posts through the shared CoreAPIClient (seat key cfg-hosted / paired key
+ * self-hosted). Core answers a GM of this world, not only the installation's owner.
  */
 
 'use strict'

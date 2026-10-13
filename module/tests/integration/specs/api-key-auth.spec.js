@@ -2,7 +2,7 @@
  * API key (Bearer) auth — when an API key is set, the plugin authenticates to
  * Core with `Authorization: Bearer cfk_...` (no session cookie). globalSetup
  * injects the key, so the module boots in Bearer mode — the same path a hosted
- * world takes with its seat key or installation key.
+ * world takes with its seat key.
  */
 
 import { test, expect } from '@playwright/test'

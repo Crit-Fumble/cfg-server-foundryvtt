@@ -429,9 +429,9 @@ Hooks.once('ready', async () => {
   // Neither → null → session-cookie auth, which only a same-origin page can use.
   const apiKey = readSeatKey() || game.settings.get(MODULE_ID, 'apiKey') || null
 
-  // apiKey set → Bearer token (seat key or installation key). Null →
-  // same-origin session-cookie auth (cfg-hosted non-owner GM fallback). A 401 renews
-  // the seat key and retries once (cs#414): the key lives 12h, a session is one page load.
+  // apiKey set → Bearer token (seat key or self-hosted pair key). Null →
+  // same-origin session-cookie auth. A 401 renews the seat key and retries once
+  // (cs#414): the key lives 12h, a session is one page load.
   _api = new CoreAPIClient(apiUrl, apiKey, { renewKey: renewSeatKey, onRenewed: settleSeatKeyRenewal })
   window.CFGCore.api = _api
   console.log(`CFG Core | Auth mode: ${apiKey ? 'Bearer key' : 'session cookie'}`)
