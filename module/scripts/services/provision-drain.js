@@ -12,10 +12,16 @@
  * The same code runs whether the connected GM is a human (their browser) or the
  * headless service-GM the platform spins up when no human is present.
  *
- * Single-drainer election: the module runs in every client, so — like the
- * activity heartbeat — only one drains. The active GM with the smallest id is
- * the drainer; everyone else stays quiet. Creating with a duplicate `_id`
- * throws, so this election (plus the per-id existence check) prevents races.
+ * Single-drainer election: the module runs in every client, so only one
+ * drains. The active HUMAN GM with the smallest id is the drainer; the headless
+ * service-GM drains only when it is the sole GM connected. Everyone else stays
+ * quiet. Creating with a duplicate `_id` throws, so this election (plus the
+ * per-id existence check) prevents races.
+ *
+ * The poll is also how core knows a human GM is connected (cfg-core-server
+ * gm-presence.ts): it decides whether to start the service-GM, and whether a
+ * world marked inactive is still in use. Hence the human-first election, and
+ * no poll from a tab cut off from its server.
  *
  * Auth: posts through the shared CoreAPIClient (seat key cfg-hosted / paired key
  * self-hosted). Core answers a GM of this world, not only the installation's owner.
@@ -25,6 +31,10 @@
 
 const MODULE_ID = 'crit-fumble-core'
 const LOG = 'CFG Core | Provision |'
+
+// MUST equal SERVICE_GM_NATIVE_ID in cfg-core-server (src/services/foundry/admin-key.ts)
+// character for character — this is the module's only copy.
+const SERVICE_GM_ID = 'CFGServiceGM0000'
 // Fixed 30s. This is the mid-session-invite path, so it never backs off: a player waiting at
 // the door should not wait out a long delay. Not 15s: it was the hottest poll in an idle GM tab.
 const DRAIN_MS = 30_000
@@ -56,17 +66,23 @@ export class ProvisionDrain {
     }
   }
 
-  /** Am I the elected drainer this tick? Smallest active GM id wins. */
+  /** Am I the elected drainer this tick? Smallest active human GM id wins; the service-GM only alone. */
   _isDrainer() {
     if (!game.user?.isGM) return false
-    const gmIds = game.users.filter((u) => u.active && u.isGM).map((u) => u.id)
-    if (gmIds.length === 0) return false
-    gmIds.sort()
-    return game.user.id === gmIds[0]
+    const gms = game.users.filter((u) => u.active && u.isGM)
+    const humans = gms.filter((u) => u.id !== SERVICE_GM_ID).map((u) => u.id)
+    const pool = humans.length > 0 ? humans : gms.map((u) => u.id)
+    if (pool.length === 0) return false
+    pool.sort()
+    return game.user.id === pool[0]
   }
 
   async _tick() {
     if (this._busy) return
+    // A tab whose socket has dropped keeps this timer running. It cannot create a User anyway,
+    // and its poll would tell core a GM is in a world that is down or still booting. `=== false`,
+    // not falsy: a build without the flag keeps polling, so an invited player is never stranded.
+    if (game.socket?.connected === false) return
     if (!this._isDrainer()) return
     const worldId = game.world?.id
     if (!worldId) return

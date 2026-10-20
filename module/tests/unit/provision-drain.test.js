@@ -88,6 +88,58 @@ describe('ProvisionDrain', () => {
     expect(User.create).not.toHaveBeenCalled()
   })
 
+  // The poll is how core knows a HUMAN GM is connected (cfg-core-server gm-presence.ts), so a
+  // human drains before the headless service-GM, whose id sorts first against most real ids.
+  it('a human GM drains before the service-GM, even when the service-GM id sorts first', async () => {
+    const users = makeUsers([
+      { id: 'CFGServiceGM0000', active: true, isGM: true, name: 'Service GM' },
+      { id: 'gm-a', active: true, isGM: true, name: 'GM' },
+    ])
+    game.users = users
+    game.user = { id: 'CFGServiceGM0000', isGM: true }
+    const service = api([ALICE])
+    await new ProvisionDrain(service, 'inst-1')._tick()
+    expect(service.getPendingProvisions).not.toHaveBeenCalled()
+
+    game.user = { id: 'gm-a', isGM: true }
+    const human = api([])
+    await new ProvisionDrain(human, 'inst-1')._tick()
+    expect(human.getPendingProvisions).toHaveBeenCalledWith('inst-1', 'world-folder')
+  })
+
+  it('the service-GM drains when it is the only GM connected', async () => {
+    game.users = makeUsers([
+      { id: 'CFGServiceGM0000', active: true, isGM: true, name: 'Service GM' },
+      { id: 'player-1', active: true, isGM: false, name: 'Player' },
+    ])
+    game.user = { id: 'CFGServiceGM0000', isGM: true }
+    const a = api([])
+    await new ProvisionDrain(a, 'inst-1')._tick()
+    expect(a.getPendingProvisions).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not poll while this tab is disconnected — core would read a GM in a world that is down', async () => {
+    game.user = { id: 'gm-a', isGM: true }
+    game.users = makeUsers([{ id: 'gm-a', active: true, isGM: true, name: 'GM' }])
+    const a = api([ALICE])
+    try {
+      game.socket = { connected: false }
+      await new ProvisionDrain(a, 'inst-1')._tick()
+      expect(a.getPendingProvisions).not.toHaveBeenCalled()
+
+      game.socket = { connected: true }
+      await new ProvisionDrain(a, 'inst-1')._tick()
+      expect(a.getPendingProvisions).toHaveBeenCalledTimes(1)
+
+      // A build without the flag keeps polling: an invited player is never stranded.
+      game.socket = {}
+      await new ProvisionDrain(a, 'inst-1')._tick()
+      expect(a.getPendingProvisions).toHaveBeenCalledTimes(2)
+    } finally {
+      delete game.socket
+    }
+  })
+
   it('does nothing for a non-GM client', async () => {
     game.user = { id: 'player-1', isGM: false }
     game.users = makeUsers([{ id: 'player-1', active: true, isGM: false, name: 'Player' }])
