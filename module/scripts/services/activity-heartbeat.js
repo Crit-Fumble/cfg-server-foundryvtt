@@ -73,6 +73,13 @@ export class ActivityHeartbeat {
 
   async _tick() {
     try {
+      // A tab whose socket has dropped keeps this timer running, and its `game.users` and
+      // `game.world` are the last it saw. Reporting them would keep the idle clock alive and tell
+      // core a world is loaded while its server is down or still booting, which sends players to
+      // a join Foundry cannot answer yet. Skip the beat; a connected client reports next tick.
+      // `=== false`, not falsy: a build without the flag keeps reporting rather than going quiet,
+      // since silence would let idle auto-stop end a live table.
+      if (game.socket?.connected === false) return
       if (!this._isReporter()) return
       // Count HUMANS only — exclude the headless service-GM from both signals.
       const humans = game.users.filter((u) => u.active && u.id !== SERVICE_GM_ID)

@@ -68,6 +68,39 @@ describe('ActivityHeartbeat', () => {
     expect(a.post.mock.calls[0][1].activeUserCount).toBe(2)
   })
 
+  it('skips the beat while this tab is disconnected — its users and world are stale', async () => {
+    // A GM tab's beat during a Stop → Start marked the world loaded on a container still booting,
+    // and every request went to a /join Foundry could not answer yet (core, 2026-10-19).
+    game.users = [{ id: 'a', active: true, isGM: true }]
+    game.user = { id: 'a' }
+    game.world = { id: 'eberron-native' }
+    const a = api()
+    try {
+      game.socket = { connected: false }
+      await new ActivityHeartbeat(a, 'inst-1')._tick()
+      expect(a.post).not.toHaveBeenCalled()
+
+      game.socket = { connected: true }
+      await new ActivityHeartbeat(a, 'inst-1')._tick()
+      expect(a.post).toHaveBeenCalledTimes(1)
+    } finally {
+      delete game.socket
+    }
+  })
+
+  it('keeps reporting when the build exposes no connection flag — silence would idle-stop a live table', async () => {
+    game.users = [{ id: 'a', active: true }]
+    game.user = { id: 'a' }
+    const a = api()
+    try {
+      game.socket = {}
+      await new ActivityHeartbeat(a, 'inst-1')._tick()
+      expect(a.post).toHaveBeenCalledTimes(1)
+    } finally {
+      delete game.socket
+    }
+  })
+
   it('is non-fatal when the report fails', async () => {
     game.users = [{ id: 'a', active: true }]
     game.user = { id: 'a' }
