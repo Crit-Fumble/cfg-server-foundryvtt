@@ -11,7 +11,8 @@
  *   - Campaign linking — Module Settings → Linked Campaigns (GM-only)
  *   - Runtime player provisioning — creates the Foundry Users the platform
  *     reserved, so the proxy can SSO invited players (ProvisionDrain, GM-only)
- *   - Activity heartbeat (drives idle auto-stop) + the once-per-load world status ping
+ *   - The world status report, once per load from a GM's tab (core reads who is
+ *     connected from Foundry itself; there is no activity heartbeat)
  *   - Edit-JSON button on document sheets (local; no platform traffic)
  *   - Connection banner (offline pill)
  *
@@ -36,7 +37,6 @@ import { CfgCampaignLinksDialog } from './views/cfg-campaign-links.js'
 import { FilePickerCompat } from './utils/file-picker-compat.js'
 import { applyHostedContext, getHostKind, resolveCoreEndpoint, readSeatKey, renewSeatKey, settleSeatKeyRenewal } from './auth/host-context.js'
 import { mountConnectionBanner } from './views/connection-banner.js'
-import { ActivityHeartbeat } from './services/activity-heartbeat.js'
 import { ProvisionDrain } from './services/provision-drain.js'
 import { tabTurn } from './services/tab-lock.js'
 import { registerJsonEditorHeaderButton } from './views/json-editor-header-button.js'
@@ -61,20 +61,8 @@ const MODULE_ID = 'crit-fumble-core'
 // the constant is gone: module.json is the ONLY version source.
 const MODULE_VERSION = () => game.modules?.get?.(MODULE_ID)?.version ?? 'unknown'
 
-/**
- * CFG campaign ids that have linked THIS Foundry world via the N:M join
- * (`WorldAccessGrant` rows with `granteeType: 'campaign'`). Populated by
- * `_resolveLinkedCampaigns` in the ready hook and exposed as
- * `CFGCore.linkedCampaignIds()`; an empty list is normal for an unlinked world.
- * @type {string[]}
- */
-let _linkedCampaignIds = []
-
 /** @type {CoreAPIClient|null} */
 let _api = null
-
-/** @type {ActivityHeartbeat|null} */
-let _activityHeartbeat = null
 
 /** @type {ProvisionDrain|null} */
 let _provisionDrain = null
@@ -87,8 +75,6 @@ window.CFGCore = {
   get version() {
     return MODULE_VERSION()
   },
-  /** @returns {string[]} Campaigns currently linked to this Foundry world via the N:M join. */
-  linkedCampaignIds: () => [..._linkedCampaignIds],
   /**
    * 'cfg-hosted' when Foundry is served from CFG infrastructure (#699 detect),
    * 'self-hosted' otherwise.
@@ -170,8 +156,8 @@ Hooks.once('init', () => {
   // many-to-many linking (`WorldAccessGrant`, granteeType 'campaign'), a world can host
   // multiple campaigns and a campaign can be played across multiple worlds.
   // The Linked Campaigns dialog (game.settings.registerMenu below) is the
-  // single source of truth; plugin-side flows that need a campaign id
-  // iterate over the linked set returned by /api/v1/account/foundry/campaigns.
+  // single source of truth; it reads the linked set from
+  // /api/v1/account/foundry/campaigns when a GM opens it.
 
   // The key a self-hosted world gets from the pair flow. A cfg-hosted world
   // does not use it: its credential is the seat-key cookie, and
@@ -187,8 +173,8 @@ Hooks.once('init', () => {
   // not world state and does not belong in one.
   //
   // 'client' stores it in that browser's localStorage, so it stays with the
-  // account it was issued to. Everything that uses it (heartbeat, provision
-  // drain) runs in a connected GM's own tab and reads it from there.
+  // account it was issued to. Everything that uses it (the provision drain, the
+  // ready report) runs in a connected GM's own tab and reads it from there.
   //
   // Foundry v14 also offers `scope: 'user'` (per-user, stored server-side),
   // which would keep persistence AND privacy. It is NOT used here: the
@@ -405,7 +391,7 @@ Hooks.once('ready', async () => {
   // cfg-hosted Foundry: clear any `apiKey` an older version stored BEFORE building
   // the API client, so the seat-key cookie is the only Bearer it can send (core
   // mints no installation owner key any more, cfg-core-server#454). Awaited so the
-  // setting is settled before the first heartbeat fires below. GM-only: it writes
+  // setting is settled before the first request below. GM-only: it writes
   // settings.
   if (isGM && getHostKind() === 'cfg-hosted') {
     try {
@@ -436,36 +422,25 @@ Hooks.once('ready', async () => {
   window.CFGCore.api = _api
   console.log(`CFG Core | Auth mode: ${apiKey ? 'Bearer key' : 'session cookie'}`)
 
-  // Resolve the campaigns linked to this Foundry world (N:M join, source of
-  // truth lives in the platform DB), exposed as `CFGCore.linkedCampaignIds()`.
-  // An empty list is fine.
-  _linkedCampaignIds = await _resolveLinkedCampaigns()
-
-  // Link this Foundry user to their platform account. Stays on the critical
-  // path: the user link is what SSO'd players wait on.
-  await _linkPlatformUser()
+  // No page-load lookups (module 3.3.5): the linked-campaign list had no reader,
+  // and the CFG↔Foundry user link is the platform's (the `coreUserId` flag it
+  // stamps, else the seat row), so a player's tab asks core for nothing.
 
   // The boot pushes of `game.modules` + the pack index (#339, dt#185) and of the
   // system schema (dt#212) are gone with the sync: the module list is read from
   // disk by core, and the pack index + schema fed only the cut import/compendium paths.
 
-  // Active-user heartbeat (cfs#109) — reports game.users.active to Core so
-  // server-side idle-shutdown automation has a real signal. Only runs when
-  // this world is linked to an installation (cfg-hosted, or a world paired by
-  // an older module); the single-reporter election lives inside the class.
-  const heartbeatInstallId = game.settings.get(MODULE_ID, 'installationId') || null
-  if (heartbeatInstallId) {
-    _activityHeartbeat = new ActivityHeartbeat(_api, heartbeatInstallId)
-    _pollerTurn().then(() => _activityHeartbeat.start())
-  }
+  // No activity heartbeat (module 3.3.5). Core asks Foundry's /api/status who is
+  // connected, and reads "a human GM is here" off the provision poll below.
+  const installId = game.settings.get(MODULE_ID, 'installationId') || null
 
   // Runtime player provisioning (cfs live-world SSO). When this client is a GM,
   // drain the platform's pending-provision queue — create the reserved Foundry
   // User docs (Foundry only lets a GM do this) so the proxy can SSO invited
   // players into a RUNNING world. Single-GM election lives in the class, so it's
   // safe that this starts in every GM browser AND the headless service-GM.
-  if (heartbeatInstallId && game.user.isGM) {
-    _provisionDrain = new ProvisionDrain(_api, heartbeatInstallId)
+  if (installId && game.user.isGM) {
+    _provisionDrain = new ProvisionDrain(_api, installId)
     _pollerTurn().then(() => _provisionDrain.start())
   }
 
@@ -504,7 +479,7 @@ Hooks.once('ready', async () => {
     console.warn('CFG Core | world-load callback failed (non-fatal):', err)
   })
 
-  console.log(`CFG Core | Ready — linkedCampaigns: [${_linkedCampaignIds.join(', ')}]`)
+  console.log('CFG Core | Ready')
 })
 
 /* -------------------------------------------- */
@@ -513,9 +488,10 @@ Hooks.once('ready', async () => {
 
 /**
  * POST the active world id to CFG so the platform's runtime state map
- * knows which world is loaded right now. Fired once per `ready` hook —
- * idempotent on the server side (repeated POSTs for the same world just
- * refresh `loadedAt`).
+ * knows which world is loaded right now. Fired once per `ready` hook, from a
+ * GM's tab only: one report per load says what the world runs, and a player's
+ * load adds nothing to it. Idempotent on the server side (repeated POSTs for the
+ * same world just refresh `loadedAt`).
  *
  * Through `_api`, the courier client (cs#414): same endpoint, same key, same
  * cookie rule, and a keyless boot renews its seat key before giving up. It was a
@@ -524,83 +500,12 @@ Hooks.once('ready', async () => {
  * That is why nobody could tell which module version ran in the 2026-09-26 outage.
  */
 async function _reportWorldLoaded() {
-  if (!game.world?.id || !_api) return
+  if (!game.user?.isGM || !game.world?.id || !_api) return
   await _api.post(`/api/v1/foundry/worlds/${encodeURIComponent(game.world.id)}/status`, {
     status: 'ready',
-    // pluginVersion rides the heartbeat so the platform's fleet report
+    // pluginVersion rides this report so the platform's fleet report
     // (dt#268/dt#183) knows what each world actually RUNS — the installed
     // files on disk are not evidence of the running version.
     pluginVersion: MODULE_VERSION(),
   })
 }
-
-/* -------------------------------------------- */
-/*  Linked Campaigns                             */
-/* -------------------------------------------- */
-
-/**
- * Fetch the set of CFG campaigns linked to THIS Foundry world via the
- * many-to-many join (`WorldAccessGrant`, granteeType 'campaign'). The GM manages the
- * link list in Module Settings → Linked Campaigns; this is the
- * canonical "which campaigns can play in this world" lookup.
- *
- * Returns an empty array when nothing is linked or the fetch fails, rather
- * than block plugin boot.
- */
-async function _resolveLinkedCampaigns() {
-  if (!_api) return []
-  const installId = game.settings.get(MODULE_ID, 'installationId') || null
-  const worldId = game.world?.id ?? null
-  if (!installId || !worldId) return []
-  try {
-    const data = await _api.get('/api/v1/account/foundry/campaigns')
-    const campaigns = Array.isArray(data?.data) ? data.data : []
-    const linked = []
-    for (const c of campaigns) {
-      // `installId` comes from the URL segment, which post-#162 can be EITHER the
-      // installation cuid or its slug (the proxy resolves by id then slug). Match
-      // on either form so slug-hosted worlds still resolve their linked campaigns
-      // (cfs#17 #147).
-      const matches = (c.linkedWorlds ?? []).some(
-        (l) =>
-          (l.installationId === installId || (l.installationSlug && l.installationSlug === installId)) &&
-          l.worldId === worldId,
-      )
-      if (matches) linked.push(c.id)
-    }
-    return linked
-  } catch (err) {
-    console.warn('CFG Core | linked-campaign resolution failed (non-fatal):', err?.message ?? err)
-    return []
-  }
-}
-
-/* -------------------------------------------- */
-/*  Platform Account Linking                     */
-/* -------------------------------------------- */
-
-/**
- * Link this Foundry user to their Core platform account.
- *
- * Auth: `_api`, the courier client — its key and its cs#414 renewal. A client of
- *   its own here kept the key `ready` started with, so a keyless boot lost the link
- *   even after an earlier call had renewed.
- *
- * On success: stores platformUserId in a user flag — core-browser's Foundry
- *   Users panel reads it. (The `av-identity` socket broadcast that used to
- *   follow had no listener anywhere and is gone.)
- */
-async function _linkPlatformUser() {
-  if (!_api) return
-  try {
-    const data = await _api.get('/api/v1/account/user')
-    const platformUserId = data?.user?.id
-    if (!platformUserId) return
-
-    await game.user.setFlag(MODULE_ID, 'platformUserId', platformUserId)
-    console.log(`CFG Core | Account linked: platform ${platformUserId} ↔ Foundry ${game.user.id}`)
-  } catch (err) {
-    console.warn('CFG Core | Platform account link failed (non-fatal):', err.message)
-  }
-}
-

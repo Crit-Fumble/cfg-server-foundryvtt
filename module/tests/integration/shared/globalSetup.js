@@ -86,7 +86,7 @@ async function injectModuleSettings(page) {
   // World-centric baseline: the API base URL, the self-hosted key, and a
   // standalone (unlinked) installationId. Specs switch installationId per
   // scenario to drive which campaigns the world resolves as linked. There is no
-  // `campaignId` setting — linkage is the N:M linkedCampaignIds() join.
+  // `campaignId` setting — linkage is core's N:M world grants.
   const installationId = FIXTURE?.installations?.standalone ?? ''
   await page.evaluate(
     ({ moduleId, apiUrl, apiKey, installationId }) => {

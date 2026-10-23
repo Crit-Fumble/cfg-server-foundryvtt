@@ -9,8 +9,8 @@
  *
  * `_reportWorldLoaded` calls `_api.post`, so the key, the cookie rule and the cs#414
  * renewal are the client's own, pinned in clients/api-client.test.js and
- * seat-key-renewal.test.js. `_linkPlatformUser` uses `_api` the same way, not a client of
- * its own built from the key `ready` started with. This file pins the routing.
+ * seat-key-renewal.test.js. This file pins the routing, that only a GM's tab sends the
+ * report (3.3.5), and that a page load makes no other request of core.
  *
  * Pinned against the source rather than imported: module.js is one big import with ~30
  * side effects — the same technique as purge-legacy-world-api-key.test.js.
@@ -50,13 +50,21 @@ describe('_reportWorldLoaded rides the courier client', () => {
   it('still reports the version that is actually running', () => {
     expect(body).toMatch(/pluginVersion: MODULE_VERSION\(\)/)
   })
+
+  it("only a GM's tab sends it — one report per load says what the world runs", () => {
+    expect(body).toMatch(/if \(!game\.user\?\.isGM \|\| /)
+  })
 })
 
-describe('_linkPlatformUser rides it too', () => {
-  const body = bodyOf('_linkPlatformUser')
-
-  it('uses _api, not a client built from the key `ready` started with', () => {
-    expect(body).toMatch(/_api\.get\('\/api\/v1\/account\/user'\)/)
-    expect(body).not.toMatch(/new CoreAPIClient/)
+describe('a page load asks core for nothing else (3.3.5)', () => {
+  // Core reads who is connected from Foundry, "a human GM is here" off the provision poll,
+  // and the CFG↔Foundry user link from its own seat rows. None of these may come back.
+  it.each([
+    ['the activity heartbeat', /\/activity\b|ActivityHeartbeat/],
+    // The Linked Campaigns dialog still reads that route when a GM opens it (views/cfg-campaign-links.js).
+    ['the linked-campaign lookup', /_api\.get\('\/api\/v1\/account\/foundry\/campaigns'\)|linkedCampaignIds/],
+    ['the account lookup and its user flag', /\/api\/v1\/account\/user|platformUserId/],
+  ])('no %s', (_label, pattern) => {
+    expect(SOURCE).not.toMatch(pattern)
   })
 })

@@ -1,7 +1,7 @@
 /**
  * CFGCore module contract — the window.CFGCore surface the rest of the plugin
- * (and these tests) rely on. Asserts the world-centric accessors exist and the
- * retired single-campaign setting stays retired. No linked campaign required.
+ * (and these tests) rely on. Asserts the accessors exist and the retired
+ * single-campaign setting stays retired. No linked campaign required.
  */
 
 import { test, expect } from '@playwright/test'
@@ -15,19 +15,16 @@ test.describe('CFGCore module contract', () => {
     await page.waitForFunction(() => window.CFGCore, { timeout: 30_000 })
   })
 
-  test('exposes version, api, and world-centric accessors', async ({ page }) => {
+  test('exposes version, api and hostKind', async ({ page }) => {
     const c = await page.evaluate(() => ({
       version: window.CFGCore.version,
       hasApi: Boolean(window.CFGCore.api),
       hostKind: window.CFGCore.hostKind(),
-      linkedIsArray: Array.isArray(window.CFGCore.linkedCampaignIds()),
     }))
 
     expect(c.version).toBeTruthy()
     expect(c.hasApi).toBe(true)
     expect(['cfg-hosted', 'self-hosted']).toContain(c.hostKind)
-    // Worlds are linked to 0..N campaigns — the accessor is always a list.
-    expect(c.linkedIsArray).toBe(true)
   })
 
   test('coreApiUrl setting is a valid URL', async ({ page }) => {
@@ -36,8 +33,8 @@ test.describe('CFGCore module contract', () => {
   })
 
   test('the retired single-campaign `campaignId` setting is not registered', async ({ page }) => {
-    // Guards against regressing to one-campaign-per-world: linkage is the N:M
-    // linkedCampaignIds(), never a `campaignId` setting. Reading an unregistered
+    // Guards against regressing to one-campaign-per-world: linkage is core's N:M
+    // world grants, never a `campaignId` setting. Reading an unregistered
     // setting throws, so a clean read here would mean the legacy setting came back.
     const stillRegistered = await page.evaluate(([mod]) => {
       try {
