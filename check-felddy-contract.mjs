@@ -4,16 +4,17 @@
  *
  * ## Why this exists
  *
- * The Dockerfile is `FROM` + five `LABEL`s + one declared `COPY` (a static ffmpeg,
- * see STATIC_FFMPEG in the rules file), and its load-bearing rule —
+ * The Dockerfile is `FROM` + five `LABEL`s + two declared `COPY`s (a static ffmpeg
+ * and a patched node, see STATIC_FFMPEG and PATCHED_NODE in the rules file), and
+ * its load-bearing rule —
  *
  *   > DO NOT add an ENTRYPOINT here. [...] felddy's entrypoint + bash supervisor
  *   > stays PID 1 — load-bearing: a clean SIGTERM is the only thing that unlocks
  *   > the world's LevelDB on shutdown.
  *
  * — lives in that comment. The Dockerfile calls this image a "Strict ADDITIVE
- * SUPERSET of felddy/foundryvtt", the README says it "behaves byte-for-byte like
- * felddy until a capability is turned on", and CONTRIBUTING says "a wrapper that
+ * SUPERSET of felddy/foundryvtt", the README says it "behaves like felddy, on a
+ * newer Node patch release, until a capability is turned on", and CONTRIBUTING says "a wrapper that
  * diverges from felddy's env/volume contract is a bug". This check proves it. Same
  * shape as the two guards this repo already ships (agent/check-playwright-pin.mjs,
  * module/check-version-bump.test.mjs): a comment is not a guard.
@@ -236,7 +237,7 @@ function main() {
   probes.scriptDigests = probe('scriptDigests', () => scriptDigests(CHECK_TAG)) || {}
   const baseScripts = probe('baseScriptDigests', () => scriptDigests(from)) || {}
 
-  // H_FFMPEG — the one declared addition must actually run. `-version` exits 0 and
+  // H_FFMPEG — the first declared addition must actually run. `-version` exits 0 and
   // prints "ffmpeg version …" on its first line; a missing or non-executable
   // binary fails the probe, which need() turns into a failure, never a skip.
   probes.ffmpegVersion = probe('ffmpeg', () =>
@@ -246,6 +247,11 @@ function main() {
   probes.ffmpegEncoders = probe('ffmpegEncoders', () =>
     sh('docker', ['run', '--rm', '--entrypoint', HARD_CONTRACT.ffmpeg, CHECK_TAG, '-hide_banner', '-encoders']),
   )
+  // H_NODE / H_NODE_DOWNGRADE — the second declared addition, read from BOTH images
+  // at the path felddy's launcher.sh execs: the wrapper's must be the patched one,
+  // the base's must still be older than it.
+  probes.nodeVersion = probe('node', () => sh('docker', ['run', '--rm', '--entrypoint', HARD_CONTRACT.node, CHECK_TAG, '-v']).trim())
+  probes.baseNodeVersion = probe('baseNode', () => sh('docker', ['run', '--rm', '--entrypoint', HARD_CONTRACT.node, from, '-v']).trim())
 
   // core-server's VERBATIM override; `--version` short-circuits entrypoint.sh
   // before any license, network or backoff work.
@@ -305,7 +311,7 @@ function main() {
   console.log(
     `probes:  uid=${probes.uid}:${probes.gid} pid1=${JSON.stringify(probes.pid1)} ` +
       `stop=${probes.stopMs}ms exit=${probes.stopExitCode} scripts=${Object.keys(probes.scriptDigests).length} ` +
-      `ffmpeg=${JSON.stringify(probes.ffmpegVersion)}`,
+      `ffmpeg=${JSON.stringify(probes.ffmpegVersion)} node=${probes.nodeVersion} (base ${probes.baseNodeVersion})`,
   )
 
   if (failed) {

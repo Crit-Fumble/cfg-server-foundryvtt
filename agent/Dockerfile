@@ -12,10 +12,17 @@
 # republishes :latest, and kind-image.ts pulls :latest with imagePull: always on
 # EVERY user container launch — so a floating `22-bookworm-slim` would let a tag
 # that changes no source still ship a different image to a live game night. This
-# is the OCI index digest, so buildx still resolves the linux/amd64 child.
-# Bump deliberately:
-#   docker buildx imagetools inspect node:22-bookworm-slim   # take the top Digest
-FROM node:22-bookworm-slim@sha256:d649c27dae7ba0137b3cef5dd75baa422c08dc3d9e3fc0c23dfb172dc3cc6436
+# is the OCI index digest, so buildx still resolves the linux/amd64 child. The
+# version in the tag is for the reader: with a digest present the builder ignores
+# the tag, so a bump that edits only the tag rebuilds the OLD image (green, out of
+# the gha cache). Bump deliberately, digest and tag together:
+#   docker buildx imagetools inspect node:22-bookworm-slim       # the top Digest
+#   docker buildx imagetools inspect node:22.<x>.<y>-bookworm-slim  # same Digest: that is the tag
+#
+# ⛔ Never below 22.23.4: older Node bundles a root store that still trusts the
+# eMudhra intermediate CAs whose private keys became recoverable, and
+# this image's Node fetches the Chromium it runs (`playwright install`, below).
+FROM node:22.23.4-bookworm-slim@sha256:de170b39439eb0e5a3444ad7d60b015614a381e10fecae2e30ec9e735122f38d
 
 ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 RUN apt-get update && apt-get install -y --no-install-recommends \
