@@ -20,7 +20,7 @@
 // compared against the base and must be identical. Adding a capability means
 // editing THIS object — which is the point: the addition becomes reviewable.
 /**
- * The ONE filesystem addition: a static ffmpeg binary (owner decision
+ * The FIRST filesystem addition: a static ffmpeg binary (owner decision
  * 2026-09-06 — "ffmpeg in the Foundry container for now"). Source is pinned by
  * its manifest-LIST digest so the same COPY resolves arm64 on a dev Mac and
  * amd64 in CI/prod. Bumping ffmpeg = a new digest HERE and in the Dockerfile;
@@ -41,6 +41,35 @@ const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&')
 export const STATIC_FFMPEG_COPY_LINE = `COPY --from=${STATIC_FFMPEG.source}@${STATIC_FFMPEG.digest} /ffmpeg ${STATIC_FFMPEG.path}`
 const STATIC_FFMPEG_COPY_RE = new RegExp(
   `^COPY\\s+--from=${escapeRe(STATIC_FFMPEG.source)}@${escapeRe(STATIC_FFMPEG.digest)}\\s+/ffmpeg\\s+${escapeRe(STATIC_FFMPEG.path)}\\s*$`,
+  'i',
+)
+
+/**
+ * The SECOND filesystem addition: a patched Node over felddy's own (owner
+ * decision 2026-10-23). felddy's node bundles a root store that still trusts the
+ * eMudhra intermediate CAs whose private keys became recoverable on 2026-10-17;
+ * Node dropped them in 24.22.1 / 22.23.4. That node runs Foundry itself, so it is
+ * replaced in place, at the path felddy's launcher.sh execs, until felddy ships a
+ * fixed one. Pinned like STATIC_FFMPEG, by manifest-LIST digest.
+ *
+ * The tag in `source` is for the reader: with a digest present the builder ignores
+ * it, so H_NODE (the built image's `node -v` against `version`) is what ties the
+ * digest to the version. H_NODE_DOWNGRADE goes red once felddy's own node reaches
+ * `version` — drop the COPY then. Why, and how to bump: Dockerfile header.
+ */
+export const PATCHED_NODE = {
+  version: '24.22.1',
+  // 24.22.1 manifest-list digest (amd64 + arm64). trixie because felddy's base is
+  // trixie: the glibc and libstdc++ the binary links against are felddy's own.
+  source: 'node:24.22.1-trixie-slim',
+  digest: 'sha256:43b9ba1142b8dcf33fa8f922ca1be85714adc444e0586c7cf7726daaeabc1bea',
+  path: '/usr/local/bin/node',
+}
+/** The exact Dockerfile line ADDITIONS admits — same path in the source image and in felddy's. */
+export const PATCHED_NODE_COPY_LINE = `COPY --from=${PATCHED_NODE.source}@${PATCHED_NODE.digest} ${PATCHED_NODE.path} ${PATCHED_NODE.path}`
+const PATCHED_NODE_COPY_RE = new RegExp(
+  `^COPY\\s+--from=${escapeRe(PATCHED_NODE.source)}@${escapeRe(PATCHED_NODE.digest)}\\s+` +
+    `${escapeRe(PATCHED_NODE.path)}\\s+${escapeRe(PATCHED_NODE.path)}\\s*$`,
   'i',
 )
 
@@ -67,18 +96,19 @@ export const ADDITIONS = {
    */
   env: {},
   /**
-   * Filesystem layers the wrapper adds. ONE: the static ffmpeg binary
-   * (STATIC_FFMPEG). P2 counts exactly this many — a duplicated COPY line passes
-   * C3 (the text is admitted) and is caught HERE as two layers against one.
+   * Filesystem layers the wrapper adds. TWO: the static ffmpeg binary
+   * (STATIC_FFMPEG) and the patched node (PATCHED_NODE). P2 counts exactly this
+   * many — a duplicated COPY line passes C3 (the text is admitted) and is caught
+   * HERE as three layers against two.
    */
-  layers: 1,
+  layers: 2,
   /**
    * Dockerfile instruction forms that may appear. A line matching none of these is
    * an undeclared instruction and fails. Comments and blanks are stripped first.
-   * The COPY pattern is EXACT — source, digest and destination — so a floating
+   * Each COPY pattern is EXACT — source, digest and destination — so a floating
    * tag, another digest, or another destination is undeclared (C3).
    */
-  instructions: [/^FROM\s/i, /^LABEL\s/i, STATIC_FFMPEG_COPY_RE],
+  instructions: [/^FROM\s/i, /^LABEL\s/i, STATIC_FFMPEG_COPY_RE, PATCHED_NODE_COPY_RE],
 }
 
 /**
@@ -110,6 +140,9 @@ export const HARD_CONTRACT = {
   workingDir: '/home/node',
   /** The declared static ffmpeg — core-server's media-ops job runner execs exactly this path. */
   ffmpeg: STATIC_FFMPEG.path,
+  /** The declared patched node — felddy's launcher.sh execs exactly this path, so Foundry runs on it. */
+  node: PATCHED_NODE.path,
+  nodeVersion: PATCHED_NODE.version,
   cmdMustContain: '--dataPath=/data',
   /** felddy's own files. An exact key set — a new or removed script fails too. */
   scripts: [
@@ -315,6 +348,20 @@ export function deepEqual(a, b) {
   const kb = Object.keys(b)
   if (ka.length !== kb.length) return false
   return ka.every((k) => Object.prototype.hasOwnProperty.call(b, k) && deepEqual(a[k], b[k]))
+}
+
+/**
+ * Order two Node versions (`v24.22.1` or `24.22.1`): -1 / 0 / 1, or null when
+ * either is not major.minor.patch — an unreadable version must never compare as
+ * "older" and pass.
+ */
+export function compareNodeVersions(a, b) {
+  const parse = (v) => (String(v ?? '').trim().match(/^v?(\d+)\.(\d+)\.(\d+)$/) || []).slice(1).map(Number)
+  const pa = parse(a)
+  const pb = parse(b)
+  if (pa.length !== 3 || pb.length !== 3) return null
+  for (let i = 0; i < 3; i++) if (pa[i] !== pb[i]) return pa[i] < pb[i] ? -1 : 1
+  return 0
 }
 
 /** Split ["K=V", ...] into an ordered list of [k, v]. */
@@ -565,7 +612,7 @@ export function checkHardContract(wrapper, probes, baseScripts, hard = HARD_CONT
     problems.push(`H_SIGTERM the container took ${probes.stopMs}ms to stop — it is not handling SIGTERM promptly`)
   }
 
-  // H_FFMPEG — the ONE declared addition (STATIC_FFMPEG) must actually run. A COPY
+  // H_FFMPEG — the first declared addition (STATIC_FFMPEG) must actually run. A COPY
   // that lands the wrong file, a lost executable bit, or a dynamic binary missing
   // its libraries all pass C3 and P2 (a layer is a layer); only running it proves
   // it. core-server's media-ops job runner execs this path and would fail at
@@ -584,6 +631,38 @@ export function checkHardContract(wrapper, probes, baseScripts, hard = HARD_CONT
     problems.push(
       `H_FFMPEG_ENCODERS ${hard.ffmpeg} -encoders lists no libvpx-vp9 — the data-ops gif→webm template cannot run on this build`,
     )
+  }
+
+  // H_NODE — the second declared addition (PATCHED_NODE) is the node Foundry runs,
+  // at the declared version. The COPY source's tag is ignored once a digest is
+  // present, so a digest bump that forgot `version`, a COPY that landed nothing
+  // (felddy's own node answers), or a binary for another libc (which cannot start
+  // on felddy's glibc) all pass C3 and P2; only running it sees them.
+  if (need('nodeVersion', probes.nodeVersion) && probes.nodeVersion !== `v${hard.nodeVersion}`) {
+    problems.push(
+      `H_NODE ${hard.node} -v printed ${JSON.stringify(probes.nodeVersion)}, expected "v${hard.nodeVersion}" — ` +
+        'Foundry is not running on the patched node PATCHED_NODE declares',
+    )
+  }
+
+  // H_NODE_DOWNGRADE — the COPY lives only until felddy ships a node at or past the
+  // patched one (owner, 2026-10-23). From then on it overwrites felddy's newer node
+  // with an older one, in silence. This is the rule that goes red on that
+  // upstream-watch bump PR.
+  if (need('baseNodeVersion', probes.baseNodeVersion)) {
+    const cmp = compareNodeVersions(probes.baseNodeVersion, hard.nodeVersion)
+    if (cmp === null) {
+      problems.push(
+        `H_NODE_DOWNGRADE the base's ${hard.node} -v printed ${JSON.stringify(probes.baseNodeVersion)} — ` +
+          'not a version, so whether the PATCHED_NODE COPY still upgrades it is unknown',
+      )
+    } else if (cmp >= 0) {
+      problems.push(
+        `H_NODE_DOWNGRADE felddy's own node is ${probes.baseNodeVersion}, at or past the patched v${hard.nodeVersion} — ` +
+          'the PATCHED_NODE COPY no longer fixes anything, and from felddy\'s next Node on it downgrades it. Drop the COPY, ' +
+          'PATCHED_NODE and its ADDITIONS entries (Dockerfile header)',
+      )
+    }
   }
 
   return problems

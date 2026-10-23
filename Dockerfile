@@ -3,12 +3,14 @@
 # cfg-server-foundryvtt — CFG's server-side wrapper image for FoundryVTT hosting.
 #
 # Strict ADDITIVE SUPERSET of felddy/foundryvtt: felddy pinned to an exact digest,
-# re-tagged under CFG's registry, plus exactly ONE declared addition (a static
-# ffmpeg binary — see "THE ONE ADDITION" below). Pointing cfg-core-server's
-# `foundryImage` at it is still a one-config change that reverts to felddy in one
-# line (losing only ffmpeg). felddy keeps owning the licensed binary
-# download/cache, the license host-binding, Config/admin.txt, the /auth /join
-# /setup surface, the /data layout, and uid 1000:1000.
+# re-tagged under CFG's registry, plus exactly TWO declared additions (a static
+# ffmpeg binary and a patched Node binary — see "ADDITION 1" and "ADDITION 2"
+# below). Pointing cfg-core-server's `foundryImage` at it is still a one-config
+# change that reverts to felddy in one line, losing ffmpeg and putting Foundry
+# back on felddy's own Node (which trusts the compromised eMudhra CAs). felddy
+# keeps owning the licensed binary download/cache, the license host-binding,
+# Config/admin.txt, the /auth /join /setup surface, the /data layout, and uid
+# 1000:1000.
 #
 # ⚠️ THE UID IS 1000:1000, NOT 1000:1001. 1001 is CFG_DATA_GID, a SUPPLEMENTARY
 # group cfg-core-server adds at launch (`groupAdd`), never the image's own gid.
@@ -52,13 +54,12 @@
 # its drain driver is a separate one-shot image (agent/Dockerfile) the platform
 # spawns as a sibling container, so it never touches this image.
 #
-# ── THE ONE ADDITION: a static ffmpeg at /usr/local/bin/ffmpeg ───────────────
+# ── ADDITION 1: a static ffmpeg at /usr/local/bin/ffmpeg ─────────────────────
 # Owner decision (2026-09-06): ffmpeg lives in the Foundry image "for now"
 # (shared media deps may be lifted across kinds later). Foundry animates WEBM
 # tokens and never GIF, so GMs need a converter next to their world data. It
 # is NOT a runtime switch and needs no env flag: nothing in felddy ever calls
-# it, so the image behaves byte-for-byte like felddy until something runs the
-# binary on purpose.
+# it, so nothing changes until something runs the binary on purpose.
 #
 # HOW IT IS INVOKED — never `docker exec`. core-server reaches Docker through a
 # socket proxy whose allowlist has no exec; instead it starts THIS image as an
@@ -88,9 +89,43 @@
 # hijacked). /usr/local/bin is outside both. The line is declared, EXACTLY, in
 # felddy-contract-rules.mjs (STATIC_FFMPEG + ADDITIONS): C3 refuses any other
 # COPY — a floating `:7.1` tag, another digest, another destination; P2 counts
-# exactly one added layer; H_FFMPEG proves the binary actually runs. Bumping
+# the declared added layers; H_FFMPEG proves the binary actually runs. Bumping
 # ffmpeg means a new index digest in BOTH places, and the mutation suite goes
 # red if they disagree.
+#
+# ── ADDITION 2: a patched Node over felddy's /usr/local/bin/node ─────────────
+# Owner decision (2026-10-23). On 2026-10-17 the private keys of eight eMudhra
+# intermediate CAs were shown to be recoverable. Node's BUNDLED root store (what
+# its TLS trusts by default, rather than the Debian store) still chains them, so
+# a client on it accepts a forged certificate for any host. Node dropped them
+# in 24.22.1 / 22.23.4, and felddy's own Node predates that. That Node runs
+# Foundry itself: package and module installs from GM-chosen URLs (code that then
+# runs in every player's browser) and the foundryvtt.com license call. So the
+# fixed binary is copied over felddy's, at the exact path felddy's launcher.sh
+# execs by absolute path; any other destination would never run.
+#
+# This one is NOT byte-for-byte felddy: every launch runs Foundry on a newer Node
+# patch release than felddy shipped. Same major, and a trixie build, so it links
+# against the glibc and libstdc++ felddy already carries; Node bundles its own
+# OpenSSL. felddy's ENV NODE_VERSION still names felddy's Node (P5 keeps base ENV
+# verbatim): read `node -v`, never that variable.
+#
+# Pinned the way ffmpeg is, by the source's manifest-LIST digest. The tag in the
+# source is for the reader: with a digest present the builder ignores it, so a
+# bump that edits only the tag rebuilds the OLD binary. H_NODE runs the built
+# image's node and compares `-v` with PATCHED_NODE.version, which ties the digest
+# to the version. Bumping = a new index digest + version in PATCHED_NODE and on
+# the line below, never below 24.22.1; upstream-watch never bumps it.
+#
+# ⛔ DROP THIS COPY once felddy's own Node reaches PATCHED_NODE.version (felddy
+# republishing on a fixed Node). From then on it could only DOWNGRADE felddy's
+# Node, so H_NODE_DOWNGRADE probes the base and goes red on that bump PR. Drop =
+# the COPY line, PATCHED_NODE and its ADDITIONS entries, and their tests.
+#
+# Not fixed here: felddy's `curl` (the platform-cache Foundry release download)
+# reads the Debian store, which still trusts the same CAs and which this contract
+# cannot change, so platform Foundry downloads stay frozen until felddy
+# republishes (owner, 2026-10-23).
 #
 # ⛔ BAKING THE crit-fumble-core PLUGIN IN WAS INVESTIGATED AND REJECTED (#1).
 # It is NOT a pending capability — it cannot work here, and
@@ -117,6 +152,11 @@ FROM felddy/foundryvtt@sha256:76497e09a7eeae769359eebdaae3bbcf39c9c826068f7dcc06
 # static ffmpeg 9.0.1 (mwader/static-ffmpeg:9.0.1, manifest-list digest) — see
 # the header. Declared verbatim in felddy-contract-rules.mjs STATIC_FFMPEG.
 COPY --from=mwader/static-ffmpeg@sha256:54e55b0cb8f672870fc38ceb2e6c411855cb3b39c505f5f3b2505ee01ed5f2b7 /ffmpeg /usr/local/bin/ffmpeg
+
+# patched Node 24.22.1 (node:24.22.1-trixie-slim, manifest-list digest) over
+# felddy's own — see the header. Declared verbatim in felddy-contract-rules.mjs
+# PATCHED_NODE.
+COPY --from=node:24.22.1-trixie-slim@sha256:43b9ba1142b8dcf33fa8f922ca1be85714adc444e0586c7cf7726daaeabc1bea /usr/local/bin/node /usr/local/bin/node
 
 LABEL org.opencontainers.image.title="cfg-server-foundryvtt"
 LABEL org.opencontainers.image.description="CFG server-side wrapper for FoundryVTT hosting — additive felddy superset"
