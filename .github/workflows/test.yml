@@ -31,6 +31,7 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version-file: .nvmrc
+          check-latest: true
           cache: npm
           cache-dependency-path: module/package-lock.json
       # Tokenless on purpose: the module has ZERO @crit-fumble/* dependencies
@@ -60,6 +61,7 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version-file: .nvmrc
+          check-latest: true
       - run: npm run test:agent
 
   # The module's release channel is `releases/latest/download/`, named by
@@ -89,6 +91,7 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version-file: .nvmrc
+          check-latest: true
       - run: npm run test:module-version
 
   # The Dockerfile is the pinned FROM, one declared COPY (the static ffmpeg) and five
@@ -127,6 +130,7 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version-file: .nvmrc
+          check-latest: true
       # Offline half first: mutation suite over fixtures, no Docker, ~0.1s. If the
       # decision functions are wrong, nothing below is worth running.
       - run: npm run test:image-contract
