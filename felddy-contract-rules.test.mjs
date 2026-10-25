@@ -14,15 +14,12 @@ import assert from 'node:assert/strict'
 import {
   ADDITIONS,
   HARD_CONTRACT,
-  PATCHED_NODE,
-  PATCHED_NODE_COPY_LINE,
   STATIC_FFMPEG,
   STATIC_FFMPEG_COPY_LINE,
   checkDockerfile,
   checkHardContract,
   checkHarnessBase,
   checkPassthrough,
-  compareNodeVersions,
   parseDockerfile,
   parseLabelLine,
 } from './felddy-contract-rules.mjs'
@@ -35,10 +32,9 @@ const GOOD_DOCKERFILE = `# a comment
 
 FROM felddy/foundryvtt@sha256:${'b'.repeat(64)}
 
-# the two declared additions, built from the rules' own constants so this fixture
+# the one declared addition, built from the rules' own constants so this fixture
 # can never drift from what ADDITIONS admits
 ${STATIC_FFMPEG_COPY_LINE}
-${PATCHED_NODE_COPY_LINE}
 
 LABEL org.opencontainers.image.title="cfg-server-foundryvtt"
 LABEL org.opencontainers.image.description="CFG server-side wrapper for FoundryVTT hosting — additive felddy superset"
@@ -87,8 +83,8 @@ function baseImage() {
 function wrapperImage() {
   const w = baseImage()
   w.Config.Labels = { ...clone(BASE_LABELS), ...ADDITIONS.labels }
-  // The two declared layers (static ffmpeg, patched node). Base layers stay an unmodified prefix.
-  w.RootFS.Layers = [...w.RootFS.Layers, 'sha256:ffmpeg', 'sha256:node']
+  // The ONE declared layer (static ffmpeg). Base layers stay an unmodified prefix.
+  w.RootFS.Layers = [...w.RootFS.Layers, 'sha256:ffmpeg']
   return w
 }
 
@@ -107,8 +103,6 @@ function goodProbes() {
     stopExitCode: '143',
     ffmpegVersion: 'ffmpeg version 9.0.1 Copyright (c) 2000-2026 the FFmpeg developers',
     ffmpegEncoders: ' V....D libvpx-vp9           libvpx VP9 (codec vp9)\n V....D libx264              libx264 H.264',
-    nodeVersion: `v${PATCHED_NODE.version}`,
-    baseNodeVersion: 'v24.22.0', // felddy's own, older than the patched one
   }
 }
 
@@ -193,34 +187,6 @@ test('C3 refuses any ffmpeg COPY but the declared one — floating tag, other di
   assert.deepEqual(checkDockerfile(GOOD_DOCKERFILE), [])
 })
 
-test('C3 refuses any node COPY but the declared one — floating, other tag, digest, libc, source or destination', () => {
-  const declared = PATCHED_NODE_COPY_LINE
-  const { source, digest, path } = PATCHED_NODE
-  const mutants = {
-    floating: `COPY --from=${source} ${path} ${path}`,
-    floatingMajor: `COPY --from=node:24-trixie-slim@${digest} ${path} ${path}`,
-    otherDigest: `COPY --from=${source}@sha256:${'d'.repeat(64)} ${path} ${path}`,
-    musl: `COPY --from=node:${PATCHED_NODE.version}-alpine@${digest} ${path} ${path}`,
-    otherSourcePath: `COPY --from=${source}@${digest} /usr/local/bin/nodejs ${path}`,
-    // launcher.sh execs /usr/local/bin/node by absolute path: any other destination never runs
-    elsewhere: `COPY --from=${source}@${digest} ${path} /usr/bin/node`,
-    underHome: `COPY --from=${source}@${digest} ${path} /home/node/node`,
-  }
-  for (const [name, mutant] of Object.entries(mutants)) {
-    assert.notEqual(mutant, declared, `${name}: mutation must actually change the line`)
-    fires(checkDockerfile(GOOD_DOCKERFILE.replace(declared, mutant)), 'C3')
-  }
-  assert.deepEqual(checkDockerfile(GOOD_DOCKERFILE), [], 'premise: the declared line itself is admitted')
-})
-
-test('PATCHED_NODE names one version: the source tag a reader sees is the version H_NODE enforces', () => {
-  assert.ok(
-    PATCHED_NODE.source.startsWith(`node:${PATCHED_NODE.version}-`),
-    `source ${PATCHED_NODE.source} does not name version ${PATCHED_NODE.version} — the builder ignores the tag, so it would lie`,
-  )
-  assert.match(PATCHED_NODE.digest, /^sha256:[0-9a-f]{64}$/)
-})
-
 test('parseDockerfile joins continuations, so a hidden instruction cannot slip past', () => {
   const { logical } = parseDockerfile('FROM x \\\n  AS builder\nLABEL a="b"\n')
   assert.equal(logical.length, 2)
@@ -256,26 +222,6 @@ test('P2 catches the declared ffmpeg layer going MISSING — zero added layers i
   const bare = wrapperImage()
   bare.RootFS.Layers = baseImage().RootFS.Layers // labels present, the declared layer absent
   fires(checkPassthrough(bare, baseImage()), 'P2')
-})
-
-test('P2 catches a duplicated node COPY, which C3 admits — three added layers against two', () => {
-  const dup = GOOD_DOCKERFILE.replace(PATCHED_NODE_COPY_LINE, `${PATCHED_NODE_COPY_LINE}\n${PATCHED_NODE_COPY_LINE}`)
-  assert.deepEqual(checkDockerfile(dup), [], 'premise: the text is admitted twice, so family C is blind to this')
-  const w = wrapperImage()
-  w.RootFS.Layers = [...w.RootFS.Layers, 'sha256:node-again']
-  fires(checkPassthrough(w, baseImage()), 'P2')
-})
-
-test('P2 and H_NODE catch the node COPY going MISSING, which C passes', () => {
-  const noNode = GOOD_DOCKERFILE.replace(`${PATCHED_NODE_COPY_LINE}\n`, '')
-  assert.notEqual(noNode, GOOD_DOCKERFILE)
-  assert.deepEqual(checkDockerfile(noNode), [], 'premise: a missing declared COPY is invisible to family C')
-  const w = wrapperImage()
-  w.RootFS.Layers = [...baseImage().RootFS.Layers, 'sha256:ffmpeg'] // ffmpeg only
-  fires(checkPassthrough(w, baseImage()), 'P2')
-  const p = goodProbes()
-  p.nodeVersion = p.baseNodeVersion // felddy's own node answers
-  fires(checkHardContract(w, p, scriptMap(), HARD_CONTRACT, GOOD_DOCKERFILE), 'H_NODE')
 })
 
 test('P3 union sweep catches a field NOBODY ENUMERATED — the check\'s own blind-spot guard', () => {
@@ -382,9 +328,7 @@ test('H_SCRIPTS catches a removed or added felddy file (exact key set)', () => {
 })
 
 test('H_PROBE treats a MISSING probe result as failure, never as a pass', () => {
-  for (const field of [
-    'uid', 'gid', 'entrypointExecutable', 'overrideExit', 'pid1', 'ffmpegVersion', 'ffmpegEncoders', 'nodeVersion', 'baseNodeVersion',
-  ]) {
+  for (const field of ['uid', 'gid', 'entrypointExecutable', 'overrideExit', 'pid1', 'ffmpegVersion', 'ffmpegEncoders']) {
     const p = goodProbes()
     delete p[field]
     const problems = hc(wrapperImage(), p)
@@ -404,7 +348,7 @@ test('H_OVERRIDE catches core-server\'s verbatim entrypoint override failing', (
   fires(hc(wrapperImage(), p), 'H_OVERRIDE')
 })
 
-test('H_FFMPEG catches a missing or broken ffmpeg — a declared addition must actually run', () => {
+test('H_FFMPEG catches a missing or broken ffmpeg — the one declared addition must actually run', () => {
   // What docker prints when the COPY landed nothing runnable: not "ffmpeg version …".
   const broken = goodProbes()
   broken.ffmpegVersion = 'exec: "/usr/local/bin/ffmpeg": stat /usr/local/bin/ffmpeg: no such file or directory'
@@ -419,45 +363,6 @@ test('H_FFMPEG_ENCODERS catches a static build without libvpx-vp9 — the gif→
   const noVpx = goodProbes()
   noVpx.ffmpegEncoders = ' V....D libx264              libx264 H.264\n V....D mpeg4                MPEG-4 part 2'
   fires(hc(wrapperImage(), noVpx), 'H_FFMPEG_ENCODERS')
-})
-
-test('H_NODE catches a node that is not the declared patched one — the digest is what builds, not the tag', () => {
-  const cases = {
-    // a digest bumped without `version`, or the COPY landing felddy's own node
-    otherVersion: 'v24.22.0',
-    newerUndeclared: 'v24.23.0',
-    // a musl binary on felddy's glibc: the kernel cannot find its loader
-    cannotStart: 'exec /usr/local/bin/node: no such file or directory',
-  }
-  for (const [name, printed] of Object.entries(cases)) {
-    const p = goodProbes()
-    p.nodeVersion = printed
-    const problems = hc(wrapperImage(), p)
-    assert.ok(problems.some((x) => x.startsWith('H_NODE ')), `${name}: expected H_NODE, got:\n  ${problems.join('\n  ')}`)
-  }
-  // Premise: C3 and P2 are blind to all three — the text and layer count are as declared.
-  assert.deepEqual(checkDockerfile(GOOD_DOCKERFILE), [])
-  assert.deepEqual(checkPassthrough(wrapperImage(), baseImage()), [])
-})
-
-test('H_NODE_DOWNGRADE goes red once felddy\'s own node reaches the patched one — drop the COPY then', () => {
-  for (const baseNode of [`v${PATCHED_NODE.version}`, 'v24.23.0', 'v26.0.0']) {
-    const p = goodProbes()
-    p.baseNodeVersion = baseNode
-    fires(hc(wrapperImage(), p), 'H_NODE_DOWNGRADE')
-  }
-  // An unreadable base version is a failure, never "older, so fine".
-  const garbled = goodProbes()
-  garbled.baseNodeVersion = 'sh: node: not found'
-  fires(hc(wrapperImage(), garbled), 'H_NODE_DOWNGRADE')
-})
-
-test('compareNodeVersions orders numerically and refuses what it cannot parse', () => {
-  assert.equal(compareNodeVersions('v24.9.0', 'v24.22.1'), -1)
-  assert.equal(compareNodeVersions('v24.22.1', '24.22.1'), 0)
-  assert.equal(compareNodeVersions('v26.0.0', '24.22.1'), 1)
-  assert.equal(compareNodeVersions('v24.22', '24.22.1'), null)
-  assert.equal(compareNodeVersions(undefined, '24.22.1'), null)
 })
 
 test('C2 catches the tools label going missing or naming a different tool set', () => {

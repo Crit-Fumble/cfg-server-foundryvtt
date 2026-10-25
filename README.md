@@ -43,20 +43,16 @@ This image is a **superset of `felddy/foundryvtt`, pinned to a digest** — neve
 fork or a from-scratch rebuild. felddy keeps owning the hard, fragile parts (the
 licensed binary download/cache, license host-binding, `Config/admin.txt`, the
 `/auth /join /setup` surface, the `/data` layout, `uid 1000:1000`). We only *add*:
-every runtime capability is gated behind a **default-OFF** env flag, and the two
-filesystem additions are declared exactly in `felddy-contract-rules.mjs`
-(`STATIC_FFMPEG`, `PATCHED_NODE` + `ADDITIONS`): a static `ffmpeg` at
-`/usr/local/bin/ffmpeg`, which nothing in felddy ever calls, and a patched Node
-over felddy's own `/usr/local/bin/node`, whose bundled root store still trusts the
-compromised eMudhra intermediate CAs. So the image behaves like felddy, on a newer
-Node patch release, until a capability is turned on or ffmpeg is run on purpose.
-That keeps the `cfg-core-server` image swap (`foundryImage`) a one-config,
-instantly-reversible change with felddy as the documented rollback (which loses
-ffmpeg and puts Foundry back on felddy's Node).
+every runtime capability is gated behind a **default-OFF** env flag, and the one
+filesystem addition — a static `ffmpeg` at `/usr/local/bin/ffmpeg`, which nothing
+in felddy ever calls — is declared exactly in `felddy-contract-rules.mjs`
+(`STATIC_FFMPEG` + `ADDITIONS`). So the image behaves byte-for-byte like felddy
+until a capability is turned on or the binary is run on purpose. That keeps the
+`cfg-core-server` image swap (`foundryImage`) a one-config, instantly-reversible
+change with felddy as the documented rollback (which loses only ffmpeg).
 
 `check-felddy-contract.mjs` enforces this in CI Gate — CONTRIBUTING.md says what a green
-does and does not prove; the Dockerfile header explains both additions, and when the
-Node one goes.
+does and does not prove; the Dockerfile header explains the ffmpeg addition.
 
 **Why own it at all:** consolidation — one repo for Foundry server-side complexity + a
 clean, deterministic Playwright e2e environment for testing + feature work.
@@ -64,7 +60,7 @@ clean, deterministic Playwright e2e environment for testing + feature work.
 ## Build & run
 
 ```bash
-# Build (felddy + a static ffmpeg layer + a patched Node layer; no npm auth or secrets)
+# Build (felddy + one static ffmpeg layer; no npm auth or secrets)
 docker build -t cfg-server-foundryvtt:local .
 
 # Runs exactly like felddy/foundryvtt (same env contract: FOUNDRY_*, CONTAINER_CACHE, ...)
