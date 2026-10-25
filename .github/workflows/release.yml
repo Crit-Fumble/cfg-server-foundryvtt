@@ -183,6 +183,7 @@ jobs:
         uses: actions/setup-node@v5
         with:
           node-version-file: .nvmrc
+          check-latest: true
 
       - name: Build module zip + manifest
         # build-zip.js uses Node built-ins only — no npm ci needed.
