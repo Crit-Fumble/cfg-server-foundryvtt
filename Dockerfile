@@ -92,17 +92,18 @@
 # ffmpeg means a new index digest in BOTH places, and the mutation suite goes
 # red if they disagree.
 #
-# ── NODE AND THE eMudhra CAs: felddy's own, nothing added ────────────────────
-# The private keys of eight eMudhra intermediate CAs are recoverable. Foundry
-# itself (package and module installs from GM-chosen URLs, the foundryvtt.com
-# license call) runs on felddy's /usr/local/bin/node, whose bundled root store
-# no longer chains them from Node 24.22.1 on. ⛔ Never pin a felddy base whose
-# `node -v` is older than that.
-#
-# Not fixed here: felddy's `curl` (the platform-cache Foundry release download)
-# reads the Debian store, which still carries the emSign C1, C3 and G1 roots and
-# which this contract cannot change, so platform Foundry downloads stay frozen
-# until felddy republishes on a store without them (owner, 2026-10-23).
+# ── TRUST STORES AND THE eMudhra CAs: felddy's own, nothing added ────────────
+# The private keys of eight eMudhra intermediate CAs are recoverable. They chain
+# through `emSign ECC Root CA - G3` and cross-signs by `AAA Certificate
+# Services`; the emSign C1, C3 and G1 roots are not affected (Debian #1151413).
+# Two stores in this image matter, and both are felddy's:
+#   - Node's bundled store (Foundry itself: package and module installs from
+#     GM-chosen URLs, the foundryvtt.com license call) drops them from Node
+#     24.22.1 on.
+#   - The Debian store (felddy's `curl`, the platform-cache Foundry release
+#     download) drops them from ca-certificates 20250419+deb13u1 on.
+# felddy 14.369.1 ships both. ⛔ Never pin a felddy base with an older Node or
+# ca-certificates: this contract cannot change either store.
 #
 # ⛔ BAKING THE crit-fumble-core PLUGIN IN WAS INVESTIGATED AND REJECTED (#1).
 # It is NOT a pending capability — it cannot work here, and
