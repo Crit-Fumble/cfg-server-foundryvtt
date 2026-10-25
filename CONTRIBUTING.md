@@ -31,8 +31,8 @@ npm run check:image-contract  # builds the image, pulls the base, runs probe con
 ```
 
 The offline half runs in the husky pre-push hook and in CI; the live half is
-CI-only because it pulls the pinned felddy base plus the static-ffmpeg and Node
-sources for the two declared `COPY --from` lines. ⚠️ A green proves the image is an additive
+CI-only because it pulls the pinned felddy base plus the static-ffmpeg source
+(~130 MB) for the declared `COPY --from`. ⚠️ A green proves the image is an additive
 superset carrying what cfg-core-server depends on. It does **not** prove Foundry
 works — the licensed half (host-binding, `admin.txt` authenticating, the LevelDB
 unlock, the `FOUNDRY_*` → `Config/options.json` mapping) lives in `e2e/` and is
@@ -43,8 +43,8 @@ but `e2e/compose.yml` sets none and the specs pass `routePrefix: ''`, so a feldd
 bump that breaks `check_health.sh`'s route-prefixed request passes both CI and
 `e2e/`.
 
-The base build is felddy plus two declared layers (a static ffmpeg and a patched
-Node) and needs no npm auth or secrets. Keep every
+The base build is felddy plus one declared static-ffmpeg layer and needs no npm
+auth or secrets. Keep every
 change **additive and reversible** — the README's "Design" section is the
 contract; a wrapper that diverges from felddy's env/volume contract is a bug.
 

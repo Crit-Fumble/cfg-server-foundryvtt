@@ -91,10 +91,10 @@ jobs:
           node-version-file: .nvmrc
       - run: npm run test:module-version
 
-  # The Dockerfile is the pinned FROM, two declared COPYs (the static ffmpeg and the
-  # patched node) and five LABELs, and its load-bearing rule ("DO NOT add an
-  # ENTRYPOINT") lives in a COMMENT; this job enforces it. Same shape as the two guards
-  # above, one layer down: this one builds the image.
+  # The Dockerfile is the pinned FROM, one declared COPY (the static ffmpeg) and five
+  # LABELs, and its load-bearing rule ("DO NOT add an ENTRYPOINT") lives in a COMMENT;
+  # this job enforces it. Same shape as the two guards above, one layer down: this one
+  # builds the image.
   #
   # It proves three things nothing else does: the Dockerfile SOURCE added no forbidden
   # instruction, the built image is still an additive superset of the pinned base
@@ -105,8 +105,8 @@ jobs:
   # rewrites the FROM digest by sed.
   #
   # NO LICENSE, NO SECRET, NO npm ci, NO GHCR LOGIN — the scripts use only node
-  # built-ins, and the one network dependency is anonymous Docker Hub pulls: the
-  # pinned base (~115 MB, retried 3x inside the check) and the two COPY sources.
+  # built-ins, and the one network dependency is an anonymous Docker Hub pull of the
+  # pinned base (~115 MB), retried 3x inside the check.
   #
   # Deliberately NO `if:` — a job-level condition that evaluates false reports
   # `skipped`, which ci-gate's fail-closed allowlist PASSES. If this cannot run, it
