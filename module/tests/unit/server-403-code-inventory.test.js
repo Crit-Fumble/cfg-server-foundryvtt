@@ -223,16 +223,6 @@ const SERVER_403_CODES = {
     pathMarkers: ['/payments/'],
     why: 'routes/v1/account/payments.ts, the Story Credit redeem/cash-out path. This module calls no payments route.',
   },
-
-  SESSION_REVOKED: {
-    handling: 'unreachable',
-    emitted: true,
-    unreachableBecause: 'route-not-called',
-    pathMarkers: ['/discord/activity'],
-    why:
-      'routes/v1/discord/activity/session-routes.ts: a banned or suspended user refused a Discord Activity session. ' +
-      'This module calls no Activity route. (The 401 SESSION_REVOKED from plugins/auth.ts is not a 403.)',
-  },
 }
 
 const RIGHTS_HANDLING = 'rights'
