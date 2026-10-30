@@ -1,0 +1,17 @@
+version: 2
+
+updates:
+  # The service-GM driver's node base, tag and digest together. The root Dockerfile's felddy pin belongs to dev-tools' upstream-watch.
+  - package-ecosystem: docker
+    directory: /agent
+    # The RC branch: `main` is only ever fast-forwarded to.
+    target-branch: next
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 1
+    commit-message:
+      prefix: chore(agent)
+    ignore:
+      # Node majors move by hand.
+      - dependency-name: node
+        update-types: ['version-update:semver-major']
