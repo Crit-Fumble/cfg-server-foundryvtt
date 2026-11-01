@@ -8,7 +8,6 @@
  *
  * What this module ACTUALLY does today (verified fp#47 — the previous list was
  * aspirational and named several things that have never been wired):
- *   - Campaign linking — Module Settings → Linked Campaigns (GM-only)
  *   - Runtime player provisioning — creates the Foundry Users the platform
  *     reserved, so the proxy can SSO invited players (ProvisionDrain, GM-only)
  *   - The world status report, once per load from a GM's tab (core reads who is
@@ -33,7 +32,6 @@
  */
 
 import { CoreAPIClient } from './clients/api-client.js'
-import { CfgCampaignLinksDialog } from './views/cfg-campaign-links.js'
 import { FilePickerCompat } from './utils/file-picker-compat.js'
 import { applyHostedContext, getHostKind, resolveCoreEndpoint, readSeatKey, renewSeatKey, settleSeatKeyRenewal } from './auth/host-context.js'
 import { mountConnectionBanner } from './views/connection-banner.js'
@@ -152,13 +150,6 @@ Hooks.once('init', () => {
     default: window.CORE_API_URL || _detectDefaultCoreApiUrl(),
   })
 
-  // The legacy single-campaign `campaignId` setting has been retired. With
-  // many-to-many linking (`WorldAccessGrant`, granteeType 'campaign'), a world can host
-  // multiple campaigns and a campaign can be played across multiple worlds.
-  // The Linked Campaigns dialog (game.settings.registerMenu below) is the
-  // single source of truth; it reads the linked set from
-  // /api/v1/account/foundry/campaigns when a GM opens it.
-
   // The key a self-hosted world gets from the pair flow. A cfg-hosted world
   // does not use it: its credential is the seat-key cookie, and
   // applyHostedContext() clears anything stored here. Hidden from the settings
@@ -213,20 +204,6 @@ Hooks.once('init', () => {
     config: false,
     type: Object,
     default: {},
-  })
-
-  // ── Module Settings → Linked Campaigns ────────────────────────────────────
-  // GM-only multi-link manager. The `campaignId` setting (handled by the
-  // dropdown below) binds the world to ONE campaign for plugin-side sync;
-  // this dialog manages the N:M database link table — "which campaigns
-  // can be played in this world" — backed by /api/v1/account/foundry/campaigns.
-  game.settings.registerMenu(MODULE_ID, 'campaignLinks', {
-    name: 'Linked Campaigns',
-    label: 'Open Linked Campaigns',
-    hint: 'Manage which CFG campaigns can be played in this Foundry world. Many campaigns can share one world.',
-    icon: 'fas fa-link',
-    type: CfgCampaignLinksDialog,
-    restricted: true,
   })
 
   console.log(`CFG Core | Settings and keybindings registered`)

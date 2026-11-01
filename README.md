@@ -12,8 +12,8 @@ repo owns *both halves*: the server runtime **and** what's served to the client.
 The platform's Foundry module lives here too — **CFG Server Manager**, module id
 `crit-fumble-core` (the id predates the title and MUST stay: Foundry worlds store
 their enable flag in `core.moduleConfiguration` keyed by id, so changing it
-orphans every world's setting). It carries campaign linking, runtime player
-provisioning, and session reporting (it does not sync world documents — owner, 2026-10-03) —
+orphans every world's setting). It carries runtime player provisioning
+and session reporting (it does not sync world documents — owner, 2026-10-03) —
 for worlds Crit-Fumble hosts. Connecting a world you host yourself is not
 currently supported.
 

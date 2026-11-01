@@ -38,7 +38,7 @@
  * ⛔ WHAT THIS TEST DOES NOT CATCH — do not let a green run imply any of it
  * ────────────────────────────────────────────────────────────────────────
  *  1. BODY SHAPE beyond `code`. The module branches on `code` but RENDERS
- *     `body.error` (api-client.js, cfg-campaign-links.js) and reads `body.scope`
+ *     `body.error` (api-client.js) and reads `body.scope`
  *     (pair-flow.js). Rename or drop `error` server-side and each degrades to a
  *     generic message with zero assertions moving. This guards the field nothing
  *     renders and ignores the two that drive the UI.
