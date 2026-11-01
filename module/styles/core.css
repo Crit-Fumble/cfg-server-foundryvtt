@@ -336,40 +336,6 @@ body.theme-dark, .themed.theme-dark {
 }
 
 /* ========================================
-   Campaign Manager Styles
-   ======================================== */
-
-.cfg-campaign-manager {
-  background: var(--cfg-bg-primary);
-  color: var(--cfg-text-primary);
-}
-
-.cfg-campaign-header {
-  padding: 15px;
-  background: var(--cfg-bg-secondary);
-  border-bottom: 1px solid var(--cfg-border);
-}
-
-.cfg-campaign-list {
-  padding: 15px;
-}
-
-.cfg-campaign-item {
-  padding: 12px;
-  background: var(--cfg-bg-secondary);
-  border: 1px solid var(--cfg-border);
-  border-radius: 4px;
-  margin-bottom: 10px;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.cfg-campaign-item:hover {
-  background: var(--cfg-bg-tertiary);
-  filter: brightness(1.1);
-}
-
-/* ========================================
    Utility Classes
    ======================================== */
 
@@ -477,14 +443,6 @@ body.theme-dark, .themed.theme-dark {
 /* ========================================
    Campaign Manager (Full)
    ======================================== */
-
-.cfg-campaign-manager {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-  background: var(--cfg-bg-primary);
-  color: var(--cfg-text-primary);
-}
 
 /* Header */
 .cfg-header {
@@ -873,74 +831,6 @@ body.theme-dark, .themed.theme-dark {
   border: 1px solid var(--cfg-border);
   border-radius: 4px;
   color: var(--cfg-text-primary);
-  cursor: pointer;
-}
-
-/* ========================================
-   Campaign Filter (Sidebar)
-   ======================================== */
-
-/* Filter indicator in directory header */
-.cfg-campaign-filter-indicator {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 10px;
-  margin-left: 10px;
-  background: var(--cfg-bg-tertiary);
-  border: 1px solid var(--cfg-border);
-  border-radius: 4px;
-  font-size: 12px;
-  cursor: pointer;
-  transition: all 0.15s ease;
-}
-
-.cfg-campaign-filter-indicator:hover {
-  border-color: var(--cfg-accent);
-}
-
-.cfg-campaign-filter-indicator.active {
-  background: rgba(74, 144, 226, 0.15);
-  border-color: var(--cfg-accent);
-  color: var(--cfg-accent);
-}
-
-.cfg-campaign-filter-indicator i {
-  font-size: 10px;
-}
-
-/* Filtered out items */
-.cfg-filtered-out {
-  display: none !important;
-}
-
-/* Campaign switcher in sidebar */
-.cfg-campaign-switcher {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 10px;
-  background: var(--cfg-bg-secondary);
-  border-bottom: 1px solid var(--cfg-border);
-  font-size: 12px;
-}
-
-.cfg-switcher-label {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  color: var(--cfg-text-secondary);
-  white-space: nowrap;
-}
-
-.cfg-switcher-select {
-  flex: 1;
-  padding: 4px 8px;
-  background: var(--cfg-bg-tertiary);
-  border: 1px solid var(--cfg-border);
-  border-radius: 4px;
-  color: var(--cfg-text-primary);
-  font-size: 12px;
   cursor: pointer;
 }
 
