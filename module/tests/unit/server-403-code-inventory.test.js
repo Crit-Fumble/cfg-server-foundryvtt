@@ -607,10 +607,11 @@ describeScan(TITLE, () => {
       'SCOPE_REQUIRED has no emission site. It is the positive control: if it is gone, distrust every other ' +
         'verdict in this file before acting on one.',
     )
-    // Same discipline for the module-side scanner that backs the reachability check.
+    // Same discipline for the module-side scanner that backs the reachability check. The floor sits
+    // below today's 9 paths: each dead client method that goes lowers the count.
     check(
-      modulePaths.length > 10 && modulePaths.some((p) => p.includes('/pending-provisions')),
-      `The module path scanner found ${modulePaths.length} paths and no /pending-provisions. It is blind, ` +
+      modulePaths.length >= 5 && modulePaths.some((p) => p.includes('/pending-provisions')),
+      `The module path scanner found ${modulePaths.length} paths (want 5 or more, one of them /pending-provisions). It is blind, ` +
         'so every "route-not-called" verdict below would pass vacuously.',
     )
     expect(found.size).toBeGreaterThan(0)
