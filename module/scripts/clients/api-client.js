@@ -18,7 +18,7 @@
  *   const api = new CoreAPIClient('https://core.crit-fumble.com')
  *   // Bearer key
  *   const api = new CoreAPIClient('https://core.crit-fumble.com', 'cfk_yourkey')
- *   const data = await api.get('/api/v1/player/campaigns/my-campaign/quests')
+ *   const data = await api.get('/api/v1/player/campaigns/my-campaign/sessions')
  */
 
 'use strict'
@@ -267,36 +267,11 @@ export class CoreAPIClient {
     return this.get(`/api/v1/player/campaigns/${id}/sessions`)
   }
 
-  // ── Quests ────────────────────────────────────────────────────────────────
-
-  /** GET /api/v1/player/campaigns/{id}/quests */
-  getQuests(id, params = {}) {
-    const qs = new URLSearchParams(params).toString()
-    return this.get(`/api/v1/player/campaigns/${id}/quests${qs ? `?${qs}` : ''}`)
-  }
-
-  /** PATCH /api/v1/player/campaigns/{id}/quests/{questId} */
-  updateQuest(campaignId, questId, data) {
-    return this.patch(`/api/v1/player/campaigns/${campaignId}/quests/${questId}`, data)
-  }
-
   // ── Journal ───────────────────────────────────────────────────────────────
 
   /** GET /api/v1/player/campaigns/{id}/journal */
   getJournal(id) {
     return this.get(`/api/v1/player/campaigns/${id}/journal`)
-  }
-
-  // ── GM Assist ─────────────────────────────────────────────────────────────
-
-  /**
-   * POST /api/v1/player/campaigns/{id}/gm-assist
-   * @param {string} id  — campaign ID
-   * @param {string} prompt
-   * @returns {Promise<{response: string}>}
-   */
-  gmAssist(id, prompt) {
-    return this.post(`/api/v1/player/campaigns/${id}/gm-assist`, { prompt })
   }
 
   // ── Runtime player provisioning ───────────────────────────────────────────

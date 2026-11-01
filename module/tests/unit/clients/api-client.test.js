@@ -361,33 +361,8 @@ describe('named campaign methods', () => {
     expect(mockFetch.mock.calls[0][0]).toContain('/api/v1/player/campaigns/camp-1/sessions/active')
   })
 
-  test('getQuests() hits /api/v1/player/campaigns/{id}/quests', async () => {
-    await api.getQuests('camp-1')
-    expect(mockFetch.mock.calls[0][0]).toContain('/api/v1/player/campaigns/camp-1/quests')
-  })
-
-  test('getQuests() appends query params', async () => {
-    await api.getQuests('camp-1', { partyId: 'p1' })
-    expect(mockFetch.mock.calls[0][0]).toContain('partyId=p1')
-  })
-
-  test('updateQuest() PATCHes /api/v1/player/campaigns/{id}/quests/{questId}', async () => {
-    await api.updateQuest('camp-1', 'q-1', { status: 'complete' })
-    const [url, opts] = mockFetch.mock.calls[0]
-    expect(url).toContain('/api/v1/player/campaigns/camp-1/quests/q-1')
-    expect(opts.method).toBe('PATCH')
-  })
-
   test('getJournal() hits /api/v1/player/campaigns/{id}/journal', async () => {
     await api.getJournal('camp-1')
     expect(mockFetch.mock.calls[0][0]).toContain('/api/v1/player/campaigns/camp-1/journal')
-  })
-
-  test('gmAssist() POSTs prompt to /api/v1/player/campaigns/{id}/gm-assist', async () => {
-    await api.gmAssist('camp-1', 'describe the dungeon')
-    const [url, opts] = mockFetch.mock.calls[0]
-    expect(url).toContain('/api/v1/player/campaigns/camp-1/gm-assist')
-    expect(opts.method).toBe('POST')
-    expect(JSON.parse(opts.body).prompt).toBe('describe the dungeon')
   })
 })

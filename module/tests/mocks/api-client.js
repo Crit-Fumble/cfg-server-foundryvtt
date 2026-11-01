@@ -5,7 +5,7 @@
  *   import { createMockApiClient } from '../mocks/api-client.js'
  *
  *   const api = createMockApiClient({
- *     getQuests: jest.fn().mockResolvedValue({ quests: [] }),
+ *     getSessions: jest.fn().mockResolvedValue({ sessions: [] }),
  *   })
  */
 
@@ -36,11 +36,8 @@ export function createMockApiClient(overrides = {}) {
     getParties: jest.fn().mockResolvedValue({ parties: [] }),
     getActiveSession: jest.fn().mockResolvedValue(null),
     getSessions: jest.fn().mockResolvedValue({ sessions: [] }),
-    getQuests: jest.fn().mockResolvedValue({ quests: [] }),
-    updateQuest: jest.fn().mockResolvedValue({}),
     joinVoice: jest.fn().mockResolvedValue({ token: 'test-token', url: 'ws://localhost', roomName: 'test-room' }),
     getJournal: jest.fn().mockResolvedValue({}),
-    gmAssist: jest.fn().mockResolvedValue({ response: '' }),
 
     ...overrides,
   }
