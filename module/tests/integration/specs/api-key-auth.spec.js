@@ -44,7 +44,7 @@ test.describe('API key (Bearer) auth', () => {
         return orig(url, opts)
       }
       try {
-        await window.CFGCore.api.get('/api/v1/account/foundry/campaigns').catch(() => {})
+        await window.CFGCore.api.get('/api/v1/installations/nonexistent/foundry/pending-provisions').catch(() => {})
       } catch {
         /* ignore response errors — we only care about the header */
       }

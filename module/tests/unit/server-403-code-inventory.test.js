@@ -38,7 +38,7 @@
  * ⛔ WHAT THIS TEST DOES NOT CATCH — do not let a green run imply any of it
  * ────────────────────────────────────────────────────────────────────────
  *  1. BODY SHAPE beyond `code`. The module branches on `code` but RENDERS
- *     `body.error` (api-client.js, cfg-campaign-links.js) and reads `body.scope`
+ *     `body.error` (api-client.js) and reads `body.scope`
  *     (pair-flow.js). Rename or drop `error` server-side and each degrades to a
  *     generic message with zero assertions moving. This guards the field nothing
  *     renders and ignores the two that drive the UI.
@@ -607,10 +607,11 @@ describeScan(TITLE, () => {
       'SCOPE_REQUIRED has no emission site. It is the positive control: if it is gone, distrust every other ' +
         'verdict in this file before acting on one.',
     )
-    // Same discipline for the module-side scanner that backs the reachability check.
+    // Same discipline for the module-side scanner that backs the reachability check. The floor sits
+    // below today's 9 paths: each dead client method that goes lowers the count.
     check(
-      modulePaths.length > 10 && modulePaths.some((p) => p.includes('/pending-provisions')),
-      `The module path scanner found ${modulePaths.length} paths and no /pending-provisions. It is blind, ` +
+      modulePaths.length >= 5 && modulePaths.some((p) => p.includes('/pending-provisions')),
+      `The module path scanner found ${modulePaths.length} paths (want 5 or more, one of them /pending-provisions). It is blind, ` +
         'so every "route-not-called" verdict below would pass vacuously.',
     )
     expect(found.size).toBeGreaterThan(0)

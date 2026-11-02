@@ -61,7 +61,6 @@ describe('a page load asks core for nothing else (3.3.5)', () => {
   // and the CFG↔Foundry user link from its own seat rows. None of these may come back.
   it.each([
     ['the activity heartbeat', /\/activity\b|ActivityHeartbeat/],
-    // The Linked Campaigns dialog still reads that route when a GM opens it (views/cfg-campaign-links.js).
     ['the linked-campaign lookup', /_api\.get\('\/api\/v1\/account\/foundry\/campaigns'\)|linkedCampaignIds/],
     ['the account lookup and its user flag', /\/api\/v1\/account\/user|platformUserId/],
   ])('no %s', (_label, pattern) => {
