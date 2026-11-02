@@ -58,7 +58,7 @@ test.describe('API key (Bearer) auth', () => {
       const { CoreAPIClient } = await import('/modules/crit-fumble-core/scripts/clients/api-client.js')
       const client = new CoreAPIClient(game.settings.get('crit-fumble-core', 'coreApiUrl'), 'cfk_invalid_key_for_testing')
       try {
-        await client.get('/api/v1/player/campaigns/nonexistent/quests')
+        await client.get('/api/v1/installations/nonexistent/foundry/pending-provisions')
       } catch (err) {
         return err.message
       }
