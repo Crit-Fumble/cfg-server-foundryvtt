@@ -22,7 +22,7 @@
 # ⛔ Never below 22.23.4: older Node bundles a root store that still trusts the
 # eMudhra intermediate CAs whose private keys became recoverable, and
 # this image's Node fetches the Chromium it runs (`playwright install`, below).
-FROM node:22.23.4-bookworm-slim@sha256:de170b39439eb0e5a3444ad7d60b015614a381e10fecae2e30ec9e735122f38d
+FROM node:22.23.4-bookworm-slim@sha256:4b150b48b4116e2a22f2c39cc27025fbf4f153e2078fd3b14d159fdb5c7279da
 
 ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 RUN apt-get update && apt-get install -y --no-install-recommends \
