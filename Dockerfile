@@ -20,7 +20,7 @@
 # and a roll can strand installs. A digest makes the image reproducible + the
 # swap/rollback symmetric.
 #
-# ── THE PIN BELOW IS felddy 14.369 ──────────────────────────────────────────
+# ── THE PIN BELOW IS felddy 14.370 ──────────────────────────────────────────
 # Resolve it against the REGISTRY manifest endpoint, not Docker Hub's tag JSON:
 # `:14` and `:14.<n>` must both answer with the digest on the FROM line below.
 #
@@ -125,7 +125,7 @@
 # entrypoint + bash supervisor stays PID 1 — load-bearing: a clean SIGTERM is the
 # only thing that unlocks the world's LevelDB on shutdown.
 
-FROM felddy/foundryvtt@sha256:2ddf90080c605ebafaaabc4fbfb6bea3cc84d20ad181ce39420e4f86e664a484
+FROM felddy/foundryvtt@sha256:24af7e8a402291d3b54443dc7266f6a8fe4a792553171c1a076e1290abda9b53
 
 # static ffmpeg 9.0.1 (mwader/static-ffmpeg:9.0.1, manifest-list digest) — see
 # the header. Declared verbatim in felddy-contract-rules.mjs STATIC_FFMPEG.
