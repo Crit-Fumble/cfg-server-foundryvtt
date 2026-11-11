@@ -12,7 +12,6 @@
  *     reserved, so the proxy can SSO invited players (ProvisionDrain, GM-only)
  *   - The world status report, once per load from a GM's tab (core reads who is
  *     connected from Foundry itself; there is no activity heartbeat)
- *   - Edit-JSON button on document sheets (local; no platform traffic)
  *   - Connection banner (offline pill)
  *
  * NO document sync (owner, 2026-10-03). The world snapshot pushes and every
@@ -37,7 +36,6 @@ import { applyHostedContext, getHostKind, resolveCoreEndpoint, readSeatKey, rene
 import { mountConnectionBanner } from './views/connection-banner.js'
 import { ProvisionDrain } from './services/provision-drain.js'
 import { tabTurn } from './services/tab-lock.js'
-import { registerJsonEditorHeaderButton } from './views/json-editor-header-button.js'
 import { mountLoadingOverlay, unmountLoadingOverlay } from './views/loading-overlay.js'
 import { registerJournalIframeGuard } from './views/journal-iframes.js'
 
@@ -426,15 +424,6 @@ Hooks.once('ready', async () => {
   // cut. They uploaded full re-push sweeps from the GM's browser (~175 MB/h on the
   // 2026-10-02 game night) and wrote into a live world. Offline platform edits will
   // be written into the world files server-side at launch instead.
-
-  // dt#212 parity — an "Edit JSON" control on Item/Actor/JournalEntry sheet headers, opening the
-  // CFG JSON editor with the same discard/required-empty diagnostics and pre-save health probe
-  // PlayTable runs. GM-only; injected via the generic renderDocumentSheetV2 hook.
-  try {
-    registerJsonEditorHeaderButton()
-  } catch (err) {
-    console.warn('CFG Core | JSON editor button registration failed (non-fatal):', err)
-  }
 
   // NB the CFG sidebar rail that used to mount here is GONE (fp#47). It was
   // disabled 2026-06-22 — it loaded an iframe to /foundry/sidebar, which 404s,

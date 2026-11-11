@@ -20,9 +20,7 @@ npm test              # jest — also run by the repo-root husky hooks and CI Ga
 
 ## Integration suite
 
-Drives the specs in `integration/specs/` — the JSON editor, the document health
-probe, API-key auth, the module contract, the system-schema descriptor and
-world/campaign links.
+Drives the specs in `integration/specs/`: API-key auth and the module contract.
 
 **One-time setup.** Copy `.env.test.example` to `.env.test` and fill it in.
 ⛔ Two of its keys are **host paths with no defaults** — `FOUNDRY_CACHE_DIR` and
@@ -50,8 +48,7 @@ Foundry mutates it freely and the tracked template stays clean. `down` deletes
 it, so a re-run starts from the template again.
 
 **Iterating on module source.** The module dir is bind-mounted live, but a
-cache-busted `import(url + '?v=…')`, the pattern `document-health-probe.spec.js`
-uses, re-fetches only that one file. Its own imports stay cached in the page's
+cache-busted `import(url + '?v=…')` re-fetches only that one file. Its own imports stay cached in the page's
 module map, so reload the page before trusting a re-test of an edited dependency.
 
 ## Two pins that are deliberate, not drift

@@ -68,8 +68,7 @@ license once from a provisioned Foundry install (`FOUNDRY_WORLD_SRC`, else the
 ## The Server Manager module (`module/`)
 
 The module has its own npm install — **tokenless**: it depends on nothing
-private (the code-editor validators are vendored into
-`module/scripts/lib/code-editor-core.js`) — and its own suites:
+private — and its own suites:
 
 ```bash
 cd module
