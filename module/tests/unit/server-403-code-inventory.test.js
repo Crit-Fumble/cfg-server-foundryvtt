@@ -223,6 +223,46 @@ const SERVER_403_CODES = {
     pathMarkers: ['/payments/'],
     why: 'routes/v1/account/payments.ts, the Story Credit redeem/cash-out path. This module calls no payments route.',
   },
+
+  CHAT_REFUSED: {
+    handling: 'unreachable',
+    emitted: true,
+    unreachableBecause: 'route-not-called',
+    pathMarkers: ['/api/v1/chat/'],
+    why: 'routes/v1/account/chat.ts and world-channels.ts, the member chat routes (cs#758, cs#793). This module calls no chat route.',
+  },
+
+  MISSING_CONNECT: {
+    handling: 'unreachable',
+    emitted: true,
+    unreachableBecause: 'route-not-called',
+    pathMarkers: ['/api/v1/chat/'],
+    why: 'routes/v1/account/chat.ts, the voice-channel pass (cs#105) refused without Connect. This module calls no chat route.',
+  },
+
+  TIER_GATED: {
+    handling: 'unreachable',
+    emitted: true,
+    unreachableBecause: 'route-not-called',
+    pathMarkers: ['/api/v1/chat/'],
+    why: 'routes/v1/account/chat.ts, creating a chat guild above the member\'s plan. This module calls no chat route.',
+  },
+
+  VOICE_NOT_ENABLED: {
+    handling: 'unreachable',
+    emitted: true,
+    unreachableBecause: 'route-not-called',
+    pathMarkers: ['/api/v1/chat/'],
+    why: 'routes/v1/account/chat.ts, a voice pass on a guild whose voice Beta is off. This module calls no chat route.',
+  },
+
+  PERSONA_LIMIT: {
+    handling: 'unreachable',
+    emitted: true,
+    unreachableBecause: 'route-not-called',
+    pathMarkers: ['/api/v1/account/personas'],
+    why: 'A refusal object from routes/v1/account/personas.ts, creating a bot persona past the member\'s limit. This module calls no persona route.',
+  },
 }
 
 const RIGHTS_HANDLING = 'rights'
