@@ -3,17 +3,12 @@
  *
  * 1. Waits for FoundryVTT to be ready (polls /api/status)
  * 2. Logs into Foundry as GM via headless Playwright browser
- * 3. Injects CFG module settings into the running world:
- *      coreApiUrl      — CORE_API_URL env var
- *      apiKey          — CORE_TEST_API_KEY env var (self-hosted tests)
- *      installationId  — the standalone installation from CORE_TEST_FOUNDRY_FIXTURE
+ * 3. Enables the crit-fumble-core module. It has no settings to inject: a member's
+ *    page holds no platform credential (cs#543).
  * 4. Saves GM storage state so test projects skip re-login
  *
  * Env vars (from tests/.env.test):
  *   FOUNDRY_URL                — default http://localhost:30000
- *   CORE_API_URL               — Core server to test against
- *   CORE_TEST_API_KEY          — cfk_ key for self-hosted tests
- *   CORE_TEST_FOUNDRY_FIXTURE  — provisioned fixtures (npm run test:foundry:provision)
  */
 
 import { chromium } from '@playwright/test'
@@ -27,9 +22,6 @@ const AUTH_DIR = join(__dirname, '../../.auth')
 const AUTH_FILE = join(AUTH_DIR, 'foundry.json')
 
 const FOUNDRY_URL = process.env.FOUNDRY_URL || 'http://localhost:30000'
-const CORE_API_URL = process.env.CORE_API_URL || 'http://localhost:10001'
-const CORE_TEST_API_KEY = process.env.CORE_TEST_API_KEY || ''
-const FIXTURE = process.env.CORE_TEST_FOUNDRY_FIXTURE ? JSON.parse(process.env.CORE_TEST_FOUNDRY_FIXTURE) : null
 
 const POLL_MS = 5_000
 const TIMEOUT_MS = 180_000
@@ -82,28 +74,6 @@ async function enableModule(page) {
   console.log('[globalSetup] crit-fumble-core module active')
 }
 
-async function injectModuleSettings(page) {
-  // World-centric baseline: the API base URL, the self-hosted key, and a
-  // standalone (unlinked) installationId. Specs switch installationId per
-  // scenario to drive which campaigns the world resolves as linked. There is no
-  // `campaignId` setting — linkage is core's N:M world grants.
-  const installationId = FIXTURE?.installations?.standalone ?? ''
-  await page.evaluate(
-    ({ moduleId, apiUrl, apiKey, installationId }) => {
-      if (apiUrl) game.settings.set(moduleId, 'coreApiUrl', apiUrl)
-      game.settings.set(moduleId, 'apiKey', apiKey || '')
-      if (installationId) game.settings.set(moduleId, 'installationId', installationId)
-    },
-    { moduleId: MODULE_ID, apiUrl: CORE_API_URL, apiKey: CORE_TEST_API_KEY, installationId },
-  )
-
-  console.log(
-    `[globalSetup] Module settings — apiUrl: ${CORE_API_URL}, apiKey: ${
-      CORE_TEST_API_KEY ? '(set)' : '(none)'
-    }, installation: ${installationId || '(none)'}`,
-  )
-}
-
 // ── Main ─────────────────────────────────────────────────────────────────────
 
 export default async function globalSetup() {
@@ -118,7 +88,6 @@ export default async function globalSetup() {
     await ensureInGame(page)
     console.log('[globalSetup] Logged in as GM')
     await enableModule(page)
-    await injectModuleSettings(page)
     await context.storageState({ path: AUTH_FILE })
     console.log(`[globalSetup] Auth state saved to ${AUTH_FILE}`)
     // Don't game.logOut() here — it destroys the session we just saved. Closing

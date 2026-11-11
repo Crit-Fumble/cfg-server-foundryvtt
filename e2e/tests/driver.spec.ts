@@ -8,8 +8,9 @@ import { startStubCoreApi, type StubCoreApi } from '../helpers/stub-core-api'
 /**
  * In-repo rung 4: the PRODUCTION driver SOURCE (agent/driver.mjs) — the
  * standalone one-shot the platform spawns as a sibling container — joins the
- * live world as the service-GM and drains a queued player. Same drain the rung-3
- * spec drives inline, but exercised through the real driver entrypoint.
+ * live world as the service-GM and drains a queued player. It calls core from
+ * its own process, never from the page (cs#543): the stub refuses any request
+ * that carries an Origin or no Bearer, as core refuses the page's origin.
  *
  * ⛔ THIS DOES NOT TEST THE DEPLOYABLE IMAGE.
  * `execFile('node', [driver])` runs on the HOST: the host's node, the ROOT
@@ -54,9 +55,7 @@ test('the production service-GM driver joins + drains the queue', async () => {
       SERVICE_GM_USERID: SERVICE_GM.nativeUserId,
       SERVICE_GM_PASSWORD: SERVICE_GM.password,
       CORE_API_URL: stub.url,
-      // A key makes CoreAPIClient send Authorization: Bearer (no cookies), so the
-      // stub can answer with Allow-Origin:* — credentialed CORS (no key) can't.
-      // Production supplies the real installation/paired key here.
+      // Production supplies the launcher's short-lived service-GM token here.
       CORE_API_KEY: 'e2e-key',
       INSTALLATION_ID,
       DRAIN_IDLE_TICKS: '2',
@@ -65,7 +64,8 @@ test('the production service-GM driver joins + drains the queue', async () => {
     timeout: 150_000,
   })
 
-  // The driver ran the real plugin drain and confirmed the seat back to (stub) core.
+  // The driver created the seat in the world and confirmed it back to (stub) core, from Node.
   expect(stdout).toContain('drain idle')
   expect(stub.confirmedIds, 'driver confirmed the queued seat').toContain(QUEUED.nativeUserId)
+  expect(stub.refused, 'no call came from the page or without the token').toEqual([])
 })

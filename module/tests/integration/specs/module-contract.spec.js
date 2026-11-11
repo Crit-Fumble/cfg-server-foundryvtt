@@ -1,7 +1,6 @@
 /**
- * CFGCore module contract — the window.CFGCore surface the rest of the plugin
- * (and these tests) rely on. Asserts the accessors exist and the retired
- * single-campaign setting stays retired. No linked campaign required.
+ * CFGCore module contract — what a member's page exposes: the running version, and
+ * no platform client or credential (cs#543). Retired settings stay retired.
  */
 
 import { test, expect } from '@playwright/test'
@@ -15,35 +14,27 @@ test.describe('CFGCore module contract', () => {
     await page.waitForFunction(() => window.CFGCore, { timeout: 30_000 })
   })
 
-  test('exposes version, api and hostKind', async ({ page }) => {
-    const c = await page.evaluate(() => ({
-      version: window.CFGCore.version,
-      hasApi: Boolean(window.CFGCore.api),
-      hostKind: window.CFGCore.hostKind(),
-    }))
-
+  test('exposes the running version and no API client', async ({ page }) => {
+    const c = await page.evaluate(() => ({ version: window.CFGCore.version, keys: Object.keys(window.CFGCore) }))
     expect(c.version).toBeTruthy()
-    expect(c.hasApi).toBe(true)
-    expect(['cfg-hosted', 'self-hosted']).toContain(c.hostKind)
+    expect(c.keys).toEqual(['version'])
   })
 
-  test('coreApiUrl setting is a valid URL', async ({ page }) => {
-    const url = await page.evaluate(([mod]) => game.settings.get(mod, 'coreApiUrl'), [MODULE_ID])
-    expect(url).toMatch(/^https?:\/\//)
-  })
-
-  test('the retired single-campaign `campaignId` setting is not registered', async ({ page }) => {
-    // Guards against regressing to one-campaign-per-world: linkage is core's N:M
-    // world grants, never a `campaignId` setting. Reading an unregistered
-    // setting throws, so a clean read here would mean the legacy setting came back.
-    const stillRegistered = await page.evaluate(([mod]) => {
-      try {
-        game.settings.get(mod, 'campaignId')
-        return true
-      } catch {
-        return false
+  test('no platform setting is registered: no endpoint, no key, no installation id', async ({ page }) => {
+    // Reading an unregistered setting throws. `campaignId` is the older retiree: linkage is
+    // core's N:M world grants, never a per-world setting.
+    const registered = await page.evaluate(([mod]) => {
+      const out = {}
+      for (const key of ['coreApiUrl', 'apiKey', 'installationId', 'campaignId']) {
+        try {
+          game.settings.get(mod, key)
+          out[key] = true
+        } catch {
+          out[key] = false
+        }
       }
+      return out
     }, [MODULE_ID])
-    expect(stillRegistered).toBe(false)
+    expect(registered).toEqual({ coreApiUrl: false, apiKey: false, installationId: false, campaignId: false })
   })
 })

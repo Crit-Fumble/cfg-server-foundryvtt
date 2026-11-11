@@ -1,18 +1,13 @@
 /**
- * One tab per browser runs the platform pollers (activity heartbeat, provision drain).
+ * One tab per browser sends the GM-presence beacon (module.js); without it, every tab a GM has
+ * open on the world would send one. `tabTurn()` resolves only in the tab holding a Web Lock,
+ * which it never releases; the browser hands the lock to the next waiting tab when the holder
+ * closes, so the role moves without any coordination of ours.
  *
- * Both elect a single reporter by comparing USER ids, so two tabs of the same user both win the
- * election and both poll. `tabTurn()` resolves only in the tab holding a Web Lock, which it never
- * releases; the browser hands the lock to the next waiting tab when the holder closes, so the
- * role moves without any coordination of ours.
+ * The lock name is per world AND per user: two GMs in one browser each keep their own beacon.
  *
- * The lock name is per world AND per user. A world-only name would let one GM's tab hold it
- * while a second user in the same browser, who may be the elected reporter, waits forever, and
- * then nobody reports.
- *
- * Where `navigator.locks` is missing (an insecure origin, an old browser) every tab runs, as
- * before: a lock we cannot take must never silence the heartbeat, because a world with no
- * heartbeat idles out under its players.
+ * Where `navigator.locks` is missing (an insecure origin, an old browser) every tab runs: a lock
+ * we cannot take must never silence the beacon, because an inactive world with no GM seen stops.
  */
 
 'use strict'

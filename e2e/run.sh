@@ -105,7 +105,7 @@ fi
 # ⛔ THE SOURCE IS THIS REPO'S OWN `module/`, AND THAT IS THE WHOLE POINT.
 # A default pointing at a sibling checkout (the archived cfg-foundry-plugin,
 # still present on dev machines) resolves silently, and every rung below —
-# world-active, service-gm-join, provision-drain, session-epoch-restart, driver
+# world-active, service-gm-join, gm-page, session-epoch-restart, driver
 # — then goes green against a module this repo does not publish, with nothing
 # failing.
 PLUGIN_SRC="${CFG_PLUGIN_SRC:-$REPO/module}"

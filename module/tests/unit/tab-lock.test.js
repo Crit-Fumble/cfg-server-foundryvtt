@@ -1,5 +1,5 @@
 /**
- * services/tab-lock.js — one tab per browser runs the heartbeat + provision drain.
+ * services/tab-lock.js — one tab per browser sends the GM-presence beacon.
  */
 
 import { jest } from '@jest/globals'

@@ -20,7 +20,7 @@ npm test              # jest — also run by the repo-root husky hooks and CI Ga
 
 ## Integration suite
 
-Drives the specs in `integration/specs/`: API-key auth and the module contract.
+Drives the spec in `integration/specs/`: the module contract.
 
 **One-time setup.** Copy `.env.test.example` to `.env.test` and fill it in.
 ⛔ Two of its keys are **host paths with no defaults** — `FOUNDRY_CACHE_DIR` and
