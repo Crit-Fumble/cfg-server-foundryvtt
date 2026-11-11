@@ -18,12 +18,12 @@
  *   const api = new CoreAPIClient('https://core.crit-fumble.com')
  *   // Bearer key
  *   const api = new CoreAPIClient('https://core.crit-fumble.com', 'cfk_yourkey')
- *   const data = await api.get('/api/v1/player/campaigns/my-campaign/sessions')
+ *   const data = await api.get('/api/v1/account/user')
  */
 
 'use strict'
 
-import { forbiddenCode } from '../auth/connection-state.js'
+import { forbiddenCode } from '../auth/forbidden-codes.js'
 
 const DEFAULT_TIMEOUT = 20_000 // 20 seconds
 const MAX_RETRIES = 2
@@ -220,58 +220,6 @@ export class CoreAPIClient {
   }
   async post(endpoint, body, opts = {}) {
     return this._parse(await this._request(endpoint, { ...opts, method: 'POST', body: JSON.stringify(body) }))
-  }
-  async patch(endpoint, body, opts = {}) {
-    return this._parse(await this._request(endpoint, { ...opts, method: 'PATCH', body: JSON.stringify(body) }))
-  }
-  async del(endpoint, opts = {}) {
-    return this._parse(await this._request(endpoint, { ...opts, method: 'DELETE' }))
-  }
-
-  // ── Campaign endpoints ────────────────────────────────────────────────────
-
-  /** GET /api/v1/player/campaigns/{id} */
-  getCampaign(id) {
-    return this.get(`/api/v1/player/campaigns/${id}`)
-  }
-
-  // ── Characters ────────────────────────────────────────────────────────────
-
-  /**
-   * GET /api/v1/player/campaigns/{id}/characters
-   * @param {string} id         — campaign ID
-   * @param {{ role?: string }} [params]
-   * @returns {Promise<{ playerCharacters: Array, summary: object }>}
-   */
-  getCampaignCharacters(id, params = {}) {
-    const qs = new URLSearchParams(params).toString()
-    return this.get(`/api/v1/player/campaigns/${id}/characters${qs ? `?${qs}` : ''}`)
-  }
-
-  // ── Parties ───────────────────────────────────────────────────────────────
-
-  /** GET /api/v1/player/campaigns/{id}/parties */
-  getParties(id) {
-    return this.get(`/api/v1/player/campaigns/${id}/parties`)
-  }
-
-  // ── Sessions ──────────────────────────────────────────────────────────────
-
-  /** GET /api/v1/player/campaigns/{id}/sessions/active */
-  getActiveSession(id) {
-    return this.get(`/api/v1/player/campaigns/${id}/sessions/active`)
-  }
-
-  /** GET /api/v1/player/campaigns/{id}/sessions */
-  getSessions(id) {
-    return this.get(`/api/v1/player/campaigns/${id}/sessions`)
-  }
-
-  // ── Journal ───────────────────────────────────────────────────────────────
-
-  /** GET /api/v1/player/campaigns/{id}/journal */
-  getJournal(id) {
-    return this.get(`/api/v1/player/campaigns/${id}/journal`)
   }
 
   // ── Runtime player provisioning ───────────────────────────────────────────

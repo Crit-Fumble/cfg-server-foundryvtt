@@ -12,7 +12,8 @@
  *     reserved, so the proxy can SSO invited players (ProvisionDrain, GM-only)
  *   - The world status report, once per load from a GM's tab (core reads who is
  *     connected from Foundry itself; there is no activity heartbeat)
- *   - Connection banner (offline pill)
+ *   - A loading overlay over the cold-load black screen, gone at `ready`
+ *   - The File Picker opens in the world's assets/ folder
  *
  * NO document sync (owner, 2026-10-03). The world snapshot pushes and every
  * Core→Foundry write-back courier were cut: the platform must never be the reason
@@ -33,7 +34,6 @@
 import { CoreAPIClient } from './clients/api-client.js'
 import { FilePickerCompat } from './utils/file-picker-compat.js'
 import { applyHostedContext, getHostKind, resolveCoreEndpoint, readSeatKey, renewSeatKey, settleSeatKeyRenewal } from './auth/host-context.js'
-import { mountConnectionBanner } from './views/connection-banner.js'
 import { ProvisionDrain } from './services/provision-drain.js'
 import { tabTurn } from './services/tab-lock.js'
 import { mountLoadingOverlay, unmountLoadingOverlay } from './views/loading-overlay.js'
@@ -187,18 +187,6 @@ Hooks.once('init', () => {
   // Host-environment detection (#699): when Foundry is cfg-hosted, the `ready`
   // hook runs `applyHostedContext()` (awaited, before the API client is built),
   // which clears any stored `apiKey` so the seat-key cookie is the only Bearer.
-
-  /**
-   * Per-campaign officer position configuration (preset + requireLeader flag).
-   * Hidden from the settings UI — currently unused by any active surface,
-   * kept registered as `Object` so existing saved values don't error.
-   */
-  game.settings.register(MODULE_ID, 'campaignPositions', {
-    scope: 'world',
-    config: false,
-    type: Object,
-    default: {},
-  })
 
   console.log(`CFG Core | Settings and keybindings registered`)
 })
@@ -426,12 +414,6 @@ Hooks.once('ready', async () => {
   // and its own note said the rail "isn't the surface we want anyway". The
   // replacement is a proper ApplicationV2 "Surface" window (tracked separately);
   // that's a rewrite, so the dead file bought nothing. `git log` has it.
-
-  // Offline banner (#699). Subscribes to `pluginConnectionState` and surfaces
-  // a small fixed-position pill whenever fetchCfg's last call hit the network
-  // error branch. Local Foundry features keep working — the banner is purely
-  // informational.
-  mountConnectionBanner()
 
   // Report the loaded world to CFG so the platform's Server Manager UI
   // can show "running — <World> loaded" instead of the stale FOUNDRY_WORLD

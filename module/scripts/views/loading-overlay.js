@@ -13,9 +13,9 @@
  * timer removes it even if `ready` never fires, so a failed load surfaces
  * Foundry's own error screen rather than staying hidden behind us.
  *
- * Inline-styled with self-injected keyframes (same philosophy as
- * connection-banner.js): no module.json `styles` entry, and teardown removes
- * both the overlay and the style node.
+ * Inline-styled with self-injected keyframes: it has to paint before Foundry
+ * loads a module's `styles`, and teardown removes both the overlay and the
+ * style node.
  */
 
 'use strict'

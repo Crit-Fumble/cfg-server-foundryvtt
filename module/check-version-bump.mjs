@@ -64,8 +64,6 @@ const REPO_ROOT = resolve(MODULE_DIR, '..')
 export const PACKED_PATHSPECS = [
   'module/module.json',
   'module/scripts',
-  'module/styles',
-  'module/lang',
   ':(exclude)module/scripts/build-zip.js',
 ]
 

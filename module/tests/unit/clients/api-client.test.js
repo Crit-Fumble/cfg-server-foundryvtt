@@ -157,18 +157,6 @@ describe('HTTP verbs', () => {
     expect(opts.body).toBe('{"name":"bar"}')
   })
 
-  test('patch() uses PATCH and serialises body', async () => {
-    await api.patch('/api/foo', { x: 1 })
-    const [, opts] = mockFetch.mock.calls[0]
-    expect(opts.method).toBe('PATCH')
-    expect(opts.body).toBe('{"x":1}')
-  })
-
-  test('del() uses DELETE', async () => {
-    await api.del('/api/foo')
-    expect(mockFetch.mock.calls[0][1].method).toBe('DELETE')
-  })
-
   test('constructs full URL from baseUrl + endpoint', async () => {
     await api.get('/api/campaigns/abc')
     expect(mockFetch.mock.calls[0][0]).toBe('https://core.crit-fumble.com/api/campaigns/abc')
@@ -333,36 +321,5 @@ describe('retry logic', () => {
     // 404 is parsed and thrown immediately — fetch itself succeeded so no retry
     await expect(api.get('/api/test')).rejects.toThrow()
     expect(mockFetch).toHaveBeenCalledTimes(1)
-  })
-})
-
-// ── Named campaign methods ─────────────────────────────────────────────────────
-
-describe('named campaign methods', () => {
-  let api
-  beforeEach(() => {
-    api = new CoreAPIClient('https://core.crit-fumble.com')
-    mockFetch.mockResolvedValue(makeResponse(200, {}))
-  })
-
-  test('getCampaign() hits /api/v1/player/campaigns/{id}', async () => {
-    await api.getCampaign('camp-1')
-    expect(mockFetch.mock.calls[0][0]).toContain('/api/v1/player/campaigns/camp-1')
-    expect(mockFetch.mock.calls[0][1].method).toBe('GET')
-  })
-
-  test('getParties() hits /api/v1/player/campaigns/{id}/parties', async () => {
-    await api.getParties('camp-1')
-    expect(mockFetch.mock.calls[0][0]).toContain('/api/v1/player/campaigns/camp-1/parties')
-  })
-
-  test('getActiveSession() hits /api/v1/player/campaigns/{id}/sessions/active', async () => {
-    await api.getActiveSession('camp-1')
-    expect(mockFetch.mock.calls[0][0]).toContain('/api/v1/player/campaigns/camp-1/sessions/active')
-  })
-
-  test('getJournal() hits /api/v1/player/campaigns/{id}/journal', async () => {
-    await api.getJournal('camp-1')
-    expect(mockFetch.mock.calls[0][0]).toContain('/api/v1/player/campaigns/camp-1/journal')
   })
 })

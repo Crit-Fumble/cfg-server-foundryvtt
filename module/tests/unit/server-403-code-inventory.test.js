@@ -3,7 +3,7 @@
  *
  * Why this file exists
  * ────────────────────
- * `FORBIDDEN_CODES` (scripts/auth/connection-state.js) lists the server error
+ * `FORBIDDEN_CODES` (scripts/auth/forbidden-codes.js) lists the server error
  * codes meaning "the credential is ALIVE but lacks a right", so a 403 carrying one
  * must NOT be read as a dead key. The list mirrors the core server, which is the
  * source of truth for it.
@@ -558,7 +558,7 @@ describe('server 403 inventory — the table and FORBIDDEN_CODES agree (no serve
   })
 
   it('FORBIDDEN_CODES is exactly the rows marked "rights" — no more, no less', async () => {
-    const { FORBIDDEN_CODES } = await import('../../scripts/auth/connection-state.js')
+    const { FORBIDDEN_CODES } = await import('../../scripts/auth/forbidden-codes.js')
     const wanted = Object.entries(SERVER_403_CODES)
       .filter(([, r]) => r.handling === RIGHTS_HANDLING)
       .map(([c]) => c)
@@ -567,7 +567,7 @@ describe('server 403 inventory — the table and FORBIDDEN_CODES agree (no serve
   })
 
   it('a retired code is still handled — otherwise the row is dead weight, not legacy retention', async () => {
-    const { FORBIDDEN_CODES } = await import('../../scripts/auth/connection-state.js')
+    const { FORBIDDEN_CODES } = await import('../../scripts/auth/forbidden-codes.js')
     for (const [code, row] of Object.entries(SERVER_403_CODES)) {
       if (row.emitted) continue
       check(
@@ -647,11 +647,11 @@ describeScan(TITLE, () => {
       'SCOPE_REQUIRED has no emission site. It is the positive control: if it is gone, distrust every other ' +
         'verdict in this file before acting on one.',
     )
-    // Same discipline for the module-side scanner that backs the reachability check. The floor sits
-    // below today's 9 paths: each dead client method that goes lowers the count.
+    // Same discipline for the module-side scanner that backs the reachability check. The floor is
+    // today's 3 paths: the provision poll, its confirm and the world status report.
     check(
-      modulePaths.length >= 5 && modulePaths.some((p) => p.includes('/pending-provisions')),
-      `The module path scanner found ${modulePaths.length} paths (want 5 or more, one of them /pending-provisions). It is blind, ` +
+      modulePaths.length >= 3 && modulePaths.some((p) => p.includes('/pending-provisions')),
+      `The module path scanner found ${modulePaths.length} paths (want 3 or more, one of them /pending-provisions). It is blind, ` +
         'so every "route-not-called" verdict below would pass vacuously.',
     )
     expect(found.size).toBeGreaterThan(0)

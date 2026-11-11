@@ -118,7 +118,7 @@ MOD="$HERE/.e2e-data/Data/modules/crit-fumble-core"
 rm -rf "$MOD"; mkdir -p "$MOD"
 # No `|| true` here: `rm -rf` already ran, so a swallowed copy failure leaves a
 # PARTIAL module and the suite reports on something that was never installed.
-cp -R "$PLUGIN_SRC/module.json" "$PLUGIN_SRC/scripts" "$PLUGIN_SRC/styles" "$PLUGIN_SRC/lang" "$MOD/"
+cp -R "$PLUGIN_SRC/module.json" "$PLUGIN_SRC/scripts" "$MOD/"
 # Say which module actually landed: a wrong source is invisible without this
 # line — both sources carry id `crit-fumble-core`, so only the VERSION
 # distinguishes the shipped module from the archived plugin.

@@ -80,7 +80,7 @@ npm run test:foundry     #   see module/tests/.env.test.example)
 ```
 
 ⚠️ `npm run build:zip`, and so every release's `module.zip`, packs only
-`module.json` plus `scripts/`, `styles/` and `lang/` (`PACK_DIRS` in
+`module.json` plus `scripts/` (`PACK_DIRS` in
 `module/scripts/build-zip.js`). The dev stack (core-server copies the whole
 `module/` directory) and the integration harness (bind-mounts `module/`) load
 everything, so a file in any other directory, such as `templates/*.hbs`, works

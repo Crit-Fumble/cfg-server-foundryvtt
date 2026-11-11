@@ -47,7 +47,7 @@ const DIST_OUT = resolve(PLUGIN_ROOT, 'dist')
 
 // Files / dirs Foundry needs at runtime. Anything else (tests, docs, the build
 // script itself, package-lock.json) stays out of the zip.
-const PACK_DIRS = ['scripts', 'styles', 'lang']
+const PACK_DIRS = ['scripts']
 const PACK_FILES = ['module.json']
 const PACK_EXCLUDES = new Set([
   'scripts/build-zip.js', // this file
