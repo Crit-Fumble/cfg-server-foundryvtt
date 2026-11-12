@@ -102,8 +102,12 @@ try {
   await page.request.get(`${FOUNDRY_URL}/join`)
   // Both id keys: Foundry <= 14.363 reads `userid`, >= 14.367 reads `userId` (core-server's own
   // join, foundry-player-session.ts, sends both for the same reason).
+  // `Sec-Fetch-Site`: Foundry 14.368+ answers 400 "The request could not be processed." to a POST
+  // that has neither a same-origin Sec-Fetch-Site nor a matching Origin, before /join runs. A
+  // request from this process carries neither, so it states one, as core-server's joins do (cs#438).
   const r = await page.request.post(`${FOUNDRY_URL}/join`, {
     form: { action: 'join', userid: USERID, userId: USERID, password: PASSWORD },
+    headers: { 'Sec-Fetch-Site': 'same-origin', Accept: 'application/json, text/html' },
   })
   const body = await r.text()
   if (!/LoginSuccess|"status"\s*:\s*"success"/.test(body)) {

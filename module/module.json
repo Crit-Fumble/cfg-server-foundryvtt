@@ -2,7 +2,7 @@
   "id": "crit-fumble-core",
   "title": "CFG Server Manager",
   "description": "Crit-Fumble platform integration for FoundryVTT worlds hosted by Crit-Fumble — the service-GM's seat provisioning and a GM-presence beacon. A member's page holds no platform credential.",
-  "version": "3.4.0",
+  "version": "3.4.1",
   "authors": [
     {
       "name": "Crit-Fumble Gaming",
