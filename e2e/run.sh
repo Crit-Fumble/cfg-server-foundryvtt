@@ -160,9 +160,12 @@ if [ -n "${WORLD_SRC:-}" ] && [ -d "$WORLD_SRC/Data/modules" ]; then
   [ -n "$SEEDED_MODS" ] && echo "→ seeded extra modules from source install:$SEEDED_MODS"
 fi
 
-# Pin the Foundry version to whatever release the cache actually holds, so felddy
-# installs from cache instead of trying to fetch the build it defaults to.
-ZIP="$(ls "$HERE/.e2e-cache"/foundryvtt-*.zip 2>/dev/null | head -1 || true)"
+# Pin the Foundry version to the NEWEST release the cache holds, so felddy installs from cache
+# instead of trying to fetch the build it defaults to. Newest, not first: prod runs a current
+# build, and 14.368+ refuses a cross-site POST that 14.367 and older let through (cs#543's
+# service-GM passed here on 14.361 and failed in prod on 14.370). Keep a zip at least as new as
+# prod's lowest 14.368 in .e2e-cache.
+ZIP="$(ls "$HERE/.e2e-cache"/foundryvtt-*.zip 2>/dev/null | sort -V | tail -1 || true)"
 if [ -n "$ZIP" ]; then
   export FOUNDRY_VERSION="$(basename "$ZIP" | sed -E 's/foundryvtt-([0-9.]+)\.zip/\1/')"
   echo "→ cache holds Foundry $FOUNDRY_VERSION"

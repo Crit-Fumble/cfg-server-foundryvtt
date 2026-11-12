@@ -14,6 +14,13 @@ const ADMIN_KEY = process.env.FOUNDRY_ADMIN_KEY ?? 'e2eadminkey000000'
  * world is loaded, a re-launch comes back 302/403 (Foundry's "a world is already
  * loaded" response), which we treat as success.
  */
+/**
+ * Foundry 14.368+ answers 400 "The request could not be processed." to a POST with neither a
+ * same-origin Sec-Fetch-Site nor a matching Origin. A request from this process carries neither, so
+ * every POST here states it, as core-server's and the service-GM's do (cs#438, cs#543).
+ */
+const SAME_ORIGIN = { 'Sec-Fetch-Site': 'same-origin' }
+
 export async function launchWorld(baseURL: string, worldId: string): Promise<void> {
   const ctx = await pwRequest.newContext({ baseURL })
   try {
@@ -21,11 +28,11 @@ export async function launchWorld(baseURL: string, worldId: string): Promise<voi
     await ctx.get('/auth')
     // 2. admin auth — Foundry 302s on both success and failure; the context jar
     //    picks up the rotated session cookie from the Set-Cookie either way.
-    await ctx.post('/auth', { form: { adminPassword: ADMIN_KEY, adminKey: ADMIN_KEY } })
+    await ctx.post('/auth', { form: { adminPassword: ADMIN_KEY, adminKey: ADMIN_KEY }, headers: SAME_ORIGIN })
     // 3. launch the world (Foundry's setup-UI submit shape)
     const r = await ctx.post('/setup', {
       form: { action: 'launchWorld', world: worldId },
-      headers: { 'x-requested-with': 'XMLHttpRequest' },
+      headers: { 'x-requested-with': 'XMLHttpRequest', ...SAME_ORIGIN },
       maxRedirects: 0,
     })
     const status = r.status()
@@ -46,9 +53,10 @@ export async function launchWorld(baseURL: string, worldId: string): Promise<voi
  */
 export async function joinWorldAsUser(page: Page, userid: string, password: string): Promise<void> {
   await page.request.get('/join')
-  const resp = await page.request.post('/join', { form: { action: 'join', userid, password } })
+  // Both id keys: Foundry <= 14.363 reads `userid`, >= 14.367 reads `userId`.
+  const resp = await page.request.post('/join', { form: { action: 'join', userid, userId: userid, password }, headers: SAME_ORIGIN })
   const body = await resp.text()
-  if (!body.includes('LoginSuccess')) throw new Error(`/join rejected ${userid}: ${body.slice(0, 160)}`)
+  if (!/LoginSuccess|"status"\s*:\s*"success"/.test(body)) throw new Error(`/join rejected ${userid}: ${body.slice(0, 160)}`)
   await page.goto('/game', { waitUntil: 'domcontentloaded', timeout: 60_000 })
   await page.waitForFunction(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
