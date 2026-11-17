@@ -11,7 +11,8 @@
  *
  * The picker browses folders made from each `path`'s segments. A picked file is its
  * `link`, so the document stores the link itself, while the picker shows the file's clean
- * name (`day.webp`, not `day.webp?s=<signature>`). Neither source takes an upload.
+ * name (`day.webp`, not `day.webp?s=<signature>`). Neither source takes an upload, and the
+ * picker offers none while one of them is open.
  */
 
 const LIST_ROUTE = 'cfg-files.json'
@@ -110,8 +111,8 @@ export function sourcesFor(list) {
 
 /**
  * Add the sources to the picker class: each has a tab, browsing them reads the list,
- * uploading into them is refused, and an opened picker lists them. Everything else in the
- * picker stays stock.
+ * uploading into them is refused (and not offered), and an opened picker lists them.
+ * Everything else in the picker stays stock.
  * @param {typeof FilePicker} FP
  */
 export function installFileSources(FP) {
@@ -158,9 +159,12 @@ export function installFileSources(FP) {
 
   // The picker names a file from the last segment of its path, which for a link carries the
   // signature. Show the clean name; the file's value (what a pick hands back) stays the link.
+  // Its form draws the Upload row from `canUpload`, so a source that takes no upload clears it
+  // (the refusal above stays as a guard).
   if (prepareContext) {
     FP.prototype._prepareContext = async function (...args) {
       const context = await prepareContext.apply(this, args)
+      if (context && isCfgSource(this.activeSource)) context.canUpload = false
       for (const file of Array.isArray(context?.files) ? context.files : []) {
         if (names.has(file?.url)) file.name = names.get(file.url)
       }

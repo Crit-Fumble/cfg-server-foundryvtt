@@ -69,6 +69,7 @@ function makePicker() {
     static upload = jest.fn(async () => ({ path: 'uploaded' }))
     static createDirectory = jest.fn(async () => true)
     sources = { data: { target: '', label: 'Data' } }
+    activeSource = 'data'
     pickedFiles = []
 
     _prepareTabs(group) {
@@ -79,10 +80,14 @@ function makePicker() {
       return tabs
     }
 
-    /** As Foundry names a file: the last segment of its path, query string and all. */
+    /**
+     * As Foundry names a file: the last segment of its path, query string and all. The form's
+     * Upload row is drawn from `canUpload`.
+     */
     async _prepareContext() {
       const result = await this.constructor.browse('cfg-personal', 'maps', {})
       return {
+        canUpload: true,
         files: result.files.map((url) => ({
           name: url.split('/').pop(),
           url,
@@ -196,6 +201,21 @@ describe('cfg-files — the picker sources', () => {
     // The value a pick hands to the document, and the preview, are still the link.
     expect(files.map((f) => f.url)).toEqual([link('maps/day.webp'), link('maps/night.webp')])
     expect(files.map((f) => f.img)).toEqual([link('maps/day.webp'), link('maps/night.webp')])
+  })
+
+  it('the Upload row is offered for Data and not while Personal or Old files is open', async () => {
+    const FP = makePicker()
+    installFileSources(FP)
+
+    const picker = new FP()
+    expect((await picker._prepareContext()).canUpload).toBe(true)
+    for (const source of [PERSONAL_SOURCE, OLD_SOURCE]) {
+      picker.activeSource = source
+      expect((await picker._prepareContext()).canUpload).toBe(false)
+    }
+    // Back on Data, the stock offer returns.
+    picker.activeSource = 'data'
+    expect((await picker._prepareContext()).canUpload).toBe(true)
   })
 
   it('a stock file keeps the name the picker gave it', async () => {
