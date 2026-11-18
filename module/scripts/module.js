@@ -10,9 +10,7 @@
  *
  * What runs in a member's tab:
  *   - A loading overlay over the cold-load black screen, gone at `ready`
- *   - The File Picker opens in the world's assets/ folder, and lists the host's files
- *     beside Data: Personal and Old files, read-only, from this server's own
- *     `cfg-files.json` (services/cfg-files.js, cs#869)
+ *   - The File Picker opens in the world's assets/ folder
  *   - In a GM's tab, a GM-presence beacon: one same-origin request every 30 s. The
  *     platform reads who sent it from the sign-in it already checks on every request,
  *     so the request carries nothing (cs#543).
@@ -27,7 +25,6 @@
  */
 
 import { FilePickerCompat } from './utils/file-picker-compat.js'
-import { installFileSources } from './services/cfg-files.js'
 import { tabTurn } from './services/tab-lock.js'
 import { mountLoadingOverlay, unmountLoadingOverlay } from './views/loading-overlay.js'
 
@@ -129,14 +126,12 @@ Hooks.once('ready', async () => {
 
   // Steer FilePicker away from User Data root, where Foundry blocks uploads
   // (modules/ and systems/ are overwritten on updates). Point it at the
-  // current world's assets/ folder — pre-created server-side on provision. And
-  // add the Personal and Old files sources beside Data (cs#869).
+  // current world's assets/ folder — pre-created server-side on provision.
   try {
     const FP = FilePickerCompat.getClass()
     if (FP && game.world?.id) {
       FP.LAST_BROWSED_DIRECTORY = `worlds/${game.world.id}/assets`
     }
-    if (FP) installFileSources(FP)
   } catch (err) {
     console.warn('CFG Core | FilePicker setup failed (non-fatal):', err)
   }
