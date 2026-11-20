@@ -1,0 +1,7 @@
+# Read by .github/workflows/codeql.yml. The scan sees shipped code only, not tests.
+name: cfg-server-foundryvtt CodeQL config
+
+paths-ignore:
+  - 'module/tests/**'
+  - 'e2e/**'
+  - '**/*.test.*'
