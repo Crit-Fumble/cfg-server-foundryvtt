@@ -46,7 +46,7 @@
  * 3. **A COPY can hijack felddy's own scripts with zero Config drift.**
  *    `COPY entrypoint.sh /home/node/entrypoint.sh` passes Config comparison, every
  *    literal assertion and every probe. Only H_SCRIPTS (a sha256 map of felddy's
- *    13 /home/node files, wrapper vs base, exact key set) sees it.
+ *    /home/node files, wrapper vs base, exact key set) sees it.
  *
  * ## The uid trap
  *

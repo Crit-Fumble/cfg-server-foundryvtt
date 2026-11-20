@@ -2,10 +2,11 @@ name: release
 
 # Build the wrapper image and push to GitHub Container Registry.
 #
-# Triggered on `v*` tag pushes (e.g. `git tag v0.1.0 && git push --tags`) and
-# manually via the Actions UI. Pushed to ghcr.io/crit-fumble/cfg-server-foundryvtt
-# with: the git ref (e.g. v0.1.0), sha-<short>, and — on `v*` tags ONLY — `latest`
-# plus `14`, the Foundry MAJOR tag (felddy-style moving tag for the 14.x line).
+# Triggered on `v*` tag pushes (the tag is `v<module/module.json version>`, on a
+# commit on main; see `verify`) and manually via the Actions UI. Pushed to
+# ghcr.io/crit-fumble/cfg-server-foundryvtt with: the git ref (e.g. v3.5.3),
+# sha-<short>, and — on `v*` tags ONLY — `latest` plus `14`, the Foundry MAJOR
+# tag (felddy-style moving tag for the 14.x line).
 # Bump `14` alongside the felddy base `FROM` digest when moving to Foundry 15.
 #
 # ⛔ `14` IS TAG-GATED FOR THE SAME REASON `latest` IS, AND IT MATTERS MORE.
@@ -41,7 +42,43 @@ permissions:
   packages: write
 
 jobs:
+  # Every publishing job needs this. On a v* tag ref it refuses a tag that is not
+  # v<module/module.json version> or a commit that is not on main; on any other
+  # ref it has nothing to check and passes.
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          ref: ${{ inputs.tag || github.ref }}
+
+      - name: Tag matches module.json version
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          TAG="$GITHUB_REF_NAME"
+          MODULE="v$(jq -r .version module/module.json)"
+          if [ "$TAG" != "$MODULE" ]; then
+            echo "::error::tag $TAG does not match module/module.json ($MODULE). Bump the version on next, promote it to main, then tag that commit."
+            exit 1
+          fi
+          echo "$TAG matches module/module.json"
+
+      - name: Tag is on main
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          SHA=$(git rev-parse HEAD)
+          git fetch --no-tags origin main
+          if ! git merge-base --is-ancestor "$SHA" origin/main; then
+            echo "::error::$SHA is not on main. A release publishes the module every hosted world installs, so tag promoted commits only."
+            exit 1
+          fi
+          echo "$SHA is on main"
+
   build:
+    needs: verify
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -109,6 +146,7 @@ jobs:
   build-agent:
     # The service-GM drain driver (one-shot headless Chromium). core-server's
     # launcher pulls ghcr.io/crit-fumble/cfg-foundry-service-gm:latest by default.
+    needs: verify
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -177,6 +215,7 @@ jobs:
     # Tag pushes only (a manual dispatch has no release to attach to). The
     # release object may not exist yet when the tag is pushed from the CLI, so
     # create it if missing rather than failing.
+    needs: verify
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     permissions:

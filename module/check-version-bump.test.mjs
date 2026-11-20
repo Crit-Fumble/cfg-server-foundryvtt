@@ -46,9 +46,8 @@ test('a BACKWARDS version fails too, and says so distinctly', () => {
 })
 
 test('an UNCHANGED packed tree needs no bump — v0.3.1 verbatim', () => {
-  // An agent-only release (a Playwright pin) touches zero module files.
-  // Demanding a module bump there would be wrong, and would make every release
-  // churn the version for nothing.
+  // An agent-only commit (a Playwright pin) touches zero module files; the
+  // release that ships it bumps the version for its tag, not this commit.
   assert.deepEqual(decideVersionBump({ ...CHANGED, localVersion: '3.0.0', changedPackedFiles: [] }), [])
 })
 

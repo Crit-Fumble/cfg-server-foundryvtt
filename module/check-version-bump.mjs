@@ -24,17 +24,15 @@
  * That is the house failure mode verbatim: not a red check, but a green one over
  * a thing that never happened.
  *
- * ## Why it keys on the PACKED tree, not on "was there a release"
+ * ## Why it keys on the PACKED tree
  *
- * Requiring a bump on every `v*` tag would be wrong and would train people to
- * bump meaninglessly: an agent-only release (a Playwright pin, say) touches zero
- * module files. A release that does not change what Foundry loads does not need
- * a new module version.
- *
- * So the rule is the narrow one: if anything `build-zip.js` actually PACKS has
- * changed since the last release, the version must have moved forward. The
- * watched set mirrors PACK_DIRS/PACK_FILES exactly, minus build-zip.js, which
- * lives under scripts/ but is excluded from the zip.
+ * Every `v*` tag is `v<module.json version>` (release.yml's `verify` job refuses
+ * any other), so every release bumps the version, agent-only ones included. This
+ * check runs earlier, on commits: if anything `build-zip.js` actually PACKS has
+ * changed since the last release, the version must have moved forward. A commit
+ * that packs nothing new needs no bump of its own; the release that ships it
+ * bumps for its tag. The watched set mirrors PACK_DIRS/PACK_FILES exactly, minus
+ * build-zip.js, which lives under scripts/ but is excluded from the zip.
  *
  * ## Where it runs
  *
@@ -126,8 +124,7 @@ export function decideVersionBump({ localVersion, baseline, changedPackedFiles }
     return problems
   }
 
-  // Nothing Foundry loads has moved, so neither must the version. This is the
-  // agent-only release case: zero module files touched.
+  // Nothing Foundry loads has moved, so this commit needs no bump of its own.
   if (changedPackedFiles.length === 0) return problems
 
   const cmp = compareSemver(localVersion, baseline.version)

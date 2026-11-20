@@ -102,7 +102,7 @@ jobs:
   # It proves three things nothing else does: the Dockerfile SOURCE added no forbidden
   # instruction, the built image is still an additive superset of the pinned base
   # (base layers an unmodified prefix, every Config field equal by union sweep,
-  # felddy's 13 /home/node scripts byte-identical), and the values cfg-core-server
+  # felddy's /home/node scripts byte-identical), and the values cfg-core-server
   # depends on are intact (uid 1000:1000, WORKDIR, non-empty CMD, HEALTHCHECK, PID 1,
   # prompt SIGTERM). It is the guard on the daily upstream-watch bump PR, which
   # rewrites the FROM digest by sed.
