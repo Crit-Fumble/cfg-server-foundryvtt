@@ -23,10 +23,8 @@ npm test              # jest — also run by the repo-root husky hooks and CI Ga
 Drives the spec in `integration/specs/`: the module contract.
 
 **One-time setup.** Copy `.env.test.example` to `.env.test` and fill it in.
-⛔ Two of its keys are **host paths with no defaults** — `FOUNDRY_CACHE_DIR` and
-`FOUNDRY_SYSTEMS_DIR`. Miss them and compose fails with a bare "variable is not
-set" that names neither this file nor what it wanted. The example explains what
-each should point at.
+⛔ `FOUNDRY_CACHE_DIR` and `FOUNDRY_SYSTEMS_DIR` are **host paths with no defaults**
+("When something breaks" below); the example explains what each should point at.
 
 ```bash
 cd module
@@ -51,23 +49,23 @@ it, so a re-run starts from the template again.
 cache-busted `import(url + '?v=…')` re-fetches only that one file. Its own imports stay cached in the page's
 module map, so reload the page before trusting a re-test of an edited dependency.
 
-## Two pins that are deliberate, not drift
+## Pins that are deliberate, not drift
 
 - **The base image** is the same digest `../../Dockerfile` pins, not the rolling
   `felddy/foundryvtt:14`. felddy rolls that tag, so a floating base could make
   this suite green against something the platform does not ship.
   `check-felddy-contract.mjs` (C7) fails if the two ever disagree.
-- **`FOUNDRY_VERSION` is 14.361**, which is *older* than the base image's own
-  default. That is on purpose: 14.361 is what `module.json` declares
+- **`FOUNDRY_VERSION`** (the compose default) is *older* than the base image's own
+  default. That is on purpose: it is what `module.json` declares
   `compatibility.verified` and what the fixture world pins as `coreVersion` and
   `minimum`. Bumping it is a **compatibility bump** — move `module.json`, the
   fixture world and the compose default together — not a version tidy-up.
 
 ## When something breaks
 
-The two failures worth naming because they look like bugs and are not:
+The failures worth naming because they look like bugs and are not:
 
 - **compose exits immediately, "variable is not set"** — `.env.test` is missing
-  one of the two host paths above.
+  one of the host paths above.
 - **felddy bails on its README scan (EACCES)** — a mounted parent ended up
   root-owned. Mount the *whole* systems dir, never a subdir.

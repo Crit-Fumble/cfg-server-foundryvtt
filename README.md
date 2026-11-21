@@ -1,8 +1,7 @@
 # cfg-server-foundryvtt
 
 CFG's **server-side wrapper image** for FoundryVTT hosting — the server half of the
-`cfg-server-*` convention (alongside `cfg-server-disrecord`, `cfg-server-factorio`,
-`cfg-server-terraria`).
+`cfg-server-*` convention.
 
 Because **FoundryVTT _is_ a webserver** that serves its own client UI, this single
 repo owns *both halves*: the server runtime **and** what's served to the client.
@@ -10,13 +9,13 @@ repo owns *both halves*: the server runtime **and** what's served to the client.
 ## The CFG Server Manager module (`module/`)
 
 The platform's Foundry module lives here too — **CFG Server Manager**, module id
-`crit-fumble-core` (the id predates the title and MUST stay: Foundry worlds store
+`crit-fumble-core` (the id MUST stay: Foundry worlds store
 their enable flag in `core.moduleConfiguration` keyed by id, so changing it
-orphans every world's setting). It carries the service-GM's runtime player
-provisioning and a GM-presence beacon, and a member's page holds no platform
-credential (cs#543; it does not sync world documents — owner, 2026-10-03) —
+orphans every world's setting). It carries a GM-presence beacon (the service-GM's
+runtime player provisioning is `agent/driver.mjs`), and a member's page holds no platform
+credential (cs#543; it does not sync world documents) —
 for worlds Crit-Fumble hosts. Connecting a world you host yourself is not
-currently supported.
+supported.
 
 **Delivery channel:** each `v*` release of this repo attaches `module.json` +
 `module.zip` as GitHub release assets, and the manifest's own URLs point at
@@ -72,11 +71,11 @@ docker run --rm -p 30000:30000 -v "$PWD/data:/data" cfg-server-foundryvtt:local
 ## Verifying the service-GM driver image
 
 `ghcr.io/crit-fumble/cfg-foundry-service-gm` is the one-shot headless Chromium
-container `foundry-service-gm-launcher.ts` spawns, and it pulls `:latest` with
-`imagePull: always` on every launch — so what that tag holds reaches users
+container `foundry-service-gm-launcher.ts` spawns, and each launch runs the
+published release its install is pinned to, by digest — so a release reaches users
 without a deploy.
 
-Two guards, and it is worth knowing what each does **not** cover:
+The guards, and it is worth knowing what each does **not** cover:
 
 | guard | covers | blind to |
 |---|---|---|
@@ -87,7 +86,8 @@ Two guards, and it is worth knowing what each does **not** cover:
 ⚠️ **No test boots the published image.**
 
 The probe below is the license-free stand-in — it needs no Foundry, no `.env` and
-no `.dev-state`, and runs the image under the launcher's exact hardening:
+no `.dev-state`, and runs the image under the launcher's read-only root, tmpfs
+mounts and dropped capabilities:
 
 ```bash
 docker run --rm --platform linux/amd64 --read-only \

@@ -15,10 +15,10 @@ This is CFG's **server-side wrapper image** for FoundryVTT hosting — a strict
 ## Build & run the image
 
 ```bash
-npm run image:build      # DOCKER_BUILDKIT=1 docker build -t cfg-server-foundryvtt:local .
-# runs exactly like felddy/foundryvtt (same FOUNDRY_* env contract):
-docker run --rm -p 30000:30000 -v "$PWD/data:/data" cfg-server-foundryvtt:local
+npm run image:build
 ```
+
+Run it as the README's "Build & run" shows.
 
 **Before you touch the `Dockerfile`, run the contract check.** The image's
 promises — additive superset of the pinned base, no ENTRYPOINT, uid 1000:1000,
@@ -26,13 +26,13 @@ promises — additive superset of the pinned base, no ENTRYPOINT, uid 1000:1000,
 down:
 
 ```bash
-npm run test:image-contract   # offline mutation suite over fixtures (~0.1s, no Docker)
+npm run test:image-contract   # offline mutation suite over fixtures (no Docker)
 npm run check:image-contract  # builds the image, pulls the base, runs probe containers
 ```
 
 The offline half runs in the husky pre-push hook and in CI; the live half is
 CI-only because it pulls the pinned felddy base plus the static-ffmpeg source
-(~130 MB) for the declared `COPY --from`. ⚠️ A green proves the image is an additive
+for the declared `COPY --from`. ⚠️ A green proves the image is an additive
 superset carrying what cfg-core-server depends on. It does **not** prove Foundry
 works — the licensed half (host-binding, `admin.txt` authenticating, the LevelDB
 unlock, the `FOUNDRY_*` → `Config/options.json` mapping) lives in `e2e/` and is
@@ -43,8 +43,7 @@ but `e2e/compose.yml` sets none and the specs pass `routePrefix: ''`, so a feldd
 bump that breaks `check_health.sh`'s route-prefixed request passes both CI and
 `e2e/`.
 
-The base build is felddy plus one declared static-ffmpeg layer and needs no npm
-auth or secrets. Keep every
+Keep every
 change **additive and reversible** — the README's "Design" section is the
 contract; a wrapper that diverges from felddy's env/volume contract is a bug.
 
@@ -68,16 +67,7 @@ license once from a provisioned Foundry install (`FOUNDRY_WORLD_SRC`, else the
 ## The Server Manager module (`module/`)
 
 The module has its own npm install — **tokenless**: it depends on nothing
-private — and its own suites:
-
-```bash
-cd module
-npm ci
-npm test                 # jest unit suite — this is what CI Gate runs
-npm run build:zip        # pack smoke: dist/module.json + dist/module.zip
-npm run test:foundry:up  # integration stack (needs a licensed Foundry account —
-npm run test:foundry     #   see module/tests/.env.test.example)
-```
+private — and its own suites, run as `module/tests/README.md` says.
 
 ⚠️ `npm run build:zip`, and so every release's `module.zip`, packs only
 `module.json` plus `scripts/` (`PACK_DIRS` in
