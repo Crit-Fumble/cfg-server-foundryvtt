@@ -8,6 +8,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
+import { readFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -115,7 +116,7 @@ test('the watched pathspecs mirror build-zip PACK_DIRS/PACK_FILES', () => {
   `], { encoding: 'utf8', cwd: MODULE_DIR })
   assert.match(packer, /wrote \d+ files/)
 
-  const src = execFileSync('cat', [join(MODULE_DIR, 'scripts/build-zip.js')], { encoding: 'utf8' })
+  const src = readFileSync(join(MODULE_DIR, 'scripts/build-zip.js'), 'utf8')
   const dirs = /const PACK_DIRS = \[([^\]]*)\]/.exec(src)[1].match(/'([^']+)'/g).map((s) => s.slice(1, -1))
   const files = /const PACK_FILES = \[([^\]]*)\]/.exec(src)[1].match(/'([^']+)'/g).map((s) => s.slice(1, -1))
   for (const entry of [...dirs, ...files]) {
