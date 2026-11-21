@@ -24,7 +24,7 @@ services:
     # we actually ship, silently, and the integration suite goes green against a
     # base nobody ships. check-felddy-contract.mjs FAILS if this line and the
     # Dockerfile's FROM ever disagree, so bumping one without the other is loud.
-    image: felddy/foundryvtt@sha256:24af7e8a402291d3b54443dc7266f6a8fe4a792553171c1a076e1290abda9b53
+    image: felddy/foundryvtt@sha256:31f69b964d637cc573e571992b14818e7f3bd4272ef8d2291511d4ada5636116
     platform: linux/amd64
     init: true
     # Run as root in the TEST container so Foundry can traverse the root-owned
