@@ -125,7 +125,7 @@
 # entrypoint + bash supervisor stays PID 1 — load-bearing: a clean SIGTERM is the
 # only thing that unlocks the world's LevelDB on shutdown.
 
-FROM felddy/foundryvtt@sha256:24af7e8a402291d3b54443dc7266f6a8fe4a792553171c1a076e1290abda9b53
+FROM felddy/foundryvtt@sha256:31f69b964d637cc573e571992b14818e7f3bd4272ef8d2291511d4ada5636116
 
 # static ffmpeg 9.0.1 (mwader/static-ffmpeg:9.0.1, manifest-list digest) — see
 # the header. Declared verbatim in felddy-contract-rules.mjs STATIC_FFMPEG.
