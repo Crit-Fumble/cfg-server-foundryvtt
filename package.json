@@ -21,7 +21,7 @@
     "prepare": "husky"
   },
   "devDependencies": {
-    "@playwright/test": "^1.49.0",
+    "@playwright/test": "^1.65.1",
     "classic-level": "^3.0.0",
     "husky": "^9.1.7"
   }
